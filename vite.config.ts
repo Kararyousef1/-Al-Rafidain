@@ -9,9 +9,9 @@ const __dirname = path.dirname(__filename);
 export default defineConfig({
   plugins: [react()],
   // المسار الأساسي للموقع على GitHub Pages
-  // يجب أن يطابق اسم الـ repo بدون شرطة في البداية
-  // (يستخدم GitHub Pages: https://username.github.io/REPO_NAME/)
-  base: "/Al-Rafidain/",
+  // اسم المستودع يبدأ بشرطة: -Al-Rafidain
+  // GitHub Pages URL: https://Kararyousef1.github.io/-Al-Rafidain/
+  base: "/-Al-Rafidain/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
