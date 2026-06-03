@@ -14,6 +14,7 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import { useUIStore } from '../../store';
 import { supabase } from '../../lib/supabase';
+import { exportToStyledExcel } from '../../utils/exportToExcel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SystemStats {
