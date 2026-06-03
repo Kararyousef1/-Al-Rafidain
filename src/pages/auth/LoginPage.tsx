@@ -72,8 +72,9 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4" dir="rtl">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-800">الرافدين HR</h1>
-          <p className="text-slate-500 mt-2">سجل الدخول إلى حسابك</p>
+          <h1 className="text-2xl font-bold text-slate-800">شركة وادي الرافدين</h1>
+          <p className="text-indigo-600 font-bold text-sm mt-1">لإنتاج المواد الصيدلانية</p>
+          <p className="text-slate-500 mt-3">سجل الدخول إلى نظام إدارة الموارد البشرية</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
