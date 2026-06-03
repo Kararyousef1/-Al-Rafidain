@@ -41,6 +41,8 @@ export default function AdminEmployeesPage() {
     { id: 'sops', label: 'إجراءات SOP', icon: FileText, category: 'الموظف' },
     { id: 'survey', label: 'الاستبيانات', icon: ClipboardList, category: 'الموظف' },
     { id: 'contact', label: 'تواصل معنا', icon: MessageSquare, category: 'الموظف' },
+    { id: 'attendance', label: 'سجلات الحضور', icon: Briefcase, category: 'الموظف' },
+    { id: 'leave-requests', label: 'طلبات الإجازة', icon: FileText, category: 'الموظف' },
     { id: 'movement-analysis', label: 'تحليل الحركة', icon: Star, category: 'الموارد البشرية' },
     { id: 'analytics', label: 'التحليلات', icon: Star, category: 'الموارد البشرية' },
     { id: 'team', label: 'فريق العمل', icon: UserIcon, category: 'الموارد البشرية' },
@@ -53,6 +55,8 @@ export default function AdminEmployeesPage() {
     { id: 'employees', label: 'إدارة الموظفين', icon: UserIcon, category: 'الإدارة' },
     { id: 'permissions', label: 'شجرة الصلاحيات', icon: ShieldCheck, category: 'الإدارة' },
     { id: 'gatekeeper-permissions', label: 'صلاحيات المدراء', icon: ShieldCheck, category: 'الإدارة' },
+    { id: 'notifications', label: 'التبليغات', icon: MessageSquare, category: 'الإدارة' },
+    { id: 'gallery-video', label: 'رفع فيديو المعرض', icon: Star, category: 'الإدارة' },
     { id: 'audit-log', label: 'سجل العمليات', icon: ShieldCheck, category: 'الإدارة' },
     { id: 'ai-config', label: 'إعداد الذكاء الاصطناعي', icon: Bot, category: 'الإدارة' },
     { id: 'settings', label: 'الإعدادات', icon: Star, category: 'الإدارة' },
@@ -60,12 +64,12 @@ export default function AdminEmployeesPage() {
 
   // الصلاحيات الافتراضية لكل دور
   const defaultPermissions: Record<string, string[]> = {
-    employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'ai-chat', 'contact', 'profile', 'sops'],
-    supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile'],
-    manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile'],
-    hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'profile'],
+    employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'ai-chat', 'contact', 'profile', 'sops', 'attendance', 'leave-requests'],
+    supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests'],
+    manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests'],
+    hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'profile', 'attendance'],
     gatekeeper: ['gatekeeper-portal'],
-    admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'ai-config', 'profile', 'sops'],
+    admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'ai-config', 'profile', 'sops', 'notifications', 'gallery-video', 'attendance', 'leave-requests'],
   };
 
   const handleRoleChange = (newRole: string) => {
@@ -290,7 +294,6 @@ export default function AdminEmployeesPage() {
         await fetchEmployees();
         alert(`✅ تم حفظ تعديلات "${formData.full_name}" بنجاح`);
       } else {
-        // التحقق مما إذا كان المستخدم موجوداً بالفعل
         let existingUserId: string | null = null;
         try {
           const { data: users } = await supabaseAdmin.auth.admin.listUsers();
@@ -298,12 +301,9 @@ export default function AdminEmployeesPage() {
           if (existingUser) {
             existingUserId = existingUser.id;
           }
-        } catch (e) {
-          // تجاهل الخطأ
-        }
+        } catch (e) {}
 
         if (existingUserId) {
-          // المستخدم موجود - فقط قم بتحديث البروفايل
           const { error: updateError } = await supabaseAdmin.from('profiles').upsert({
             id: existingUserId,
             full_name: formData.full_name,
@@ -331,7 +331,6 @@ export default function AdminEmployeesPage() {
           await fetchEmployees();
           alert(`✅ تم تحديث بيانات "${formData.full_name}" بنجاح (كان موجوداً مسبقاً)`);
         } else {
-          // إنشاء مستخدم جديد
           const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email: finalEmail,
             password: formData.passcode,
@@ -340,9 +339,7 @@ export default function AdminEmployeesPage() {
           });
 
           if (createError) {
-            // إذا فشل لأن المستخدم موجود (حالة نادرة)، حاول إدراج البروفايل فقط
             if (createError.message?.includes('already exists') || createError.message?.includes('already registered')) {
-              // حاول إيجاد المستخدم وجلب ID
               try {
                 const { data: users } = await supabaseAdmin.auth.admin.listUsers();
                 const existingUser = users?.users?.find(u => u.email === finalEmail);
@@ -618,7 +615,7 @@ export default function AdminEmployeesPage() {
         </div>
       )}
 
-      {/* ── CREATE USER MODAL ── كامل بجميع التفاصيل */}
+      {/* ── CREATE USER MODAL ── */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-8">
@@ -789,14 +786,13 @@ export default function AdminEmployeesPage() {
                 </div>
               </div>
 
-              {/* ── قسم الصلاحيات الديناميكية للشريط الجانبي ── */}
+              {/* ── قسم الصلاحيات الديناميكية ── */}
               <div className="mt-8 border-t border-slate-100 pt-6">
                 <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <ShieldCheck className="text-indigo-600" /> صلاحيات الوصول للشريط الجانبي
                 </h4>
                 <p className="text-sm text-slate-500 mb-4">
-                  تم تعيين الصلاحيات الافتراضية لدور "<span className="font-bold text-indigo-600">{formData.role === 'hr' ? 'الموارد البشرية' : formData.role === 'gatekeeper' ? 'حارس الأمن' : formData.role === 'manager' ? 'مدير القسم' : formData.role === 'supervisor' ? 'المشرف' : 'الموظف'}</span>". 
-                  يمكنك إضافة أو إزالة أي صلاحية من القائمة أدناه باستخدام زر (+).
+                  تم تعيين الصلاحيات الافتراضية لدور "<span className="font-bold text-indigo-600">{formData.role === 'hr' ? 'الموارد البشرية' : formData.role === 'gatekeeper' ? 'حارس الأمن' : formData.role === 'manager' ? 'مدير القسم' : formData.role === 'supervisor' ? 'المشرف' : 'الموظف'}</span>".
                 </p>
                 
                 <div className="space-y-4">
