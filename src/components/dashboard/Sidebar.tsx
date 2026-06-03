@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, FileText, MessageSquare, ClipboardList, Heart, Bot,
   User, Users, BarChart2, TrendingUp, Radio, FileBarChart, Settings,
-  ShieldCheck, Cpu, ChevronRight, LogOut, Bell, Building2, Star, Terminal, Database, AlertOctagon, BookOpen, BarChart3, Globe, Award, X, ArrowRightLeft, Clock
+  ShieldCheck, Cpu, ChevronRight, LogOut, Bell, Building2, Star, Terminal, Database, AlertOctagon, BookOpen, BarChart3, Globe, Award, X, ArrowRightLeft, Clock, CheckCircle2
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { UserRole } from '../../types';
@@ -186,10 +186,15 @@ export default function Sidebar() {
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${roleColors[user.role]} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
               {(user?.name || user?.full_name || 'U').charAt(0)}
             </div>
-            <div className="overflow-hidden">
-              <p className="text-slate-800 font-semibold text-sm truncate">{user?.name || user?.full_name}</p>
-              <p className="text-slate-500 text-xs truncate">{user.position}</p>
-            </div>
+              <div className="overflow-hidden">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-slate-800 font-semibold text-sm truncate">{user?.name || user?.full_name}</p>
+                  <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle2 size={10} className="text-white" />
+                  </span>
+                </div>
+                <p className="text-slate-500 text-xs truncate">{user.position}</p>
+              </div>
           </div>
         </div>
       )}
