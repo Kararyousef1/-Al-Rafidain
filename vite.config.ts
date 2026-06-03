@@ -8,10 +8,10 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   plugins: [react()],
-  // المسار الأساسي للموقع على GitHub Pages
-  // اسم المستودع يبدأ بشرطة: -Al-Rafidain
-  // GitHub Pages URL: https://Kararyousef1.github.io/-Al-Rafidain/
-  base: "/-Al-Rafidain/",
+  // المسار الأساسي للموقع
+  // Netlify يستضيف من الجذر "/"
+  // (إذا أردت GitHub Pages لاحقاً، غيّر إلى "/Al-Rafidain/" بعد إعادة تسمية المستودع)
+  base: "/",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
