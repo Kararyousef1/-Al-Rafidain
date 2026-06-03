@@ -360,6 +360,7 @@ export default function AdminEmployeesPage() {
                         <option value="manager">مدير قسم</option>
                         <option value="hr">موارد بشرية</option>
                         <option value="gatekeeper">حارس</option>
+                        <option value="developer">⚙️ مطور</option>
                         <option value="admin">مدير نظام</option>
                       </select>
                     </div>
