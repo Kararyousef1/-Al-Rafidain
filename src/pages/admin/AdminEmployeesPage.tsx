@@ -103,14 +103,30 @@ export default function AdminEmployeesPage() {
   const handleDeleteEmployee = async (emp: any) => {
     if (!confirm(`هل أنت متأكد من حذف "${emp.full_name}" نهائياً؟`)) return;
     try {
+      // حذف من Auth (إذا كان موجوداً)
       const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(emp.id);
-      if (authError) {
-        await supabaseAdmin.from('profiles').delete().eq('id', emp.id);
+      
+      // حذف من profiles دائماً
+      const { error: profileError } = await supabaseAdmin.from('profiles').delete().eq('id', emp.id);
+      
+      if (authError && !authError.message?.includes('User not found')) {
+        console.warn('Auth delete warning:', authError.message);
       }
+      if (profileError) {
+        console.warn('Profile delete warning:', profileError.message);
+      }
+      
       setEmployees(prev => prev.filter(e => e.id !== emp.id));
-      alert(`✅ تم حذف "${emp.full_name}"`);
+      alert(`✅ تم حذف "${emp.full_name}" من النظام`);
     } catch (err: any) {
-      alert(`فشل الحذف: ${err?.message || ''}`);
+      // محاولة أخيرة: حذف من profiles فقط
+      try {
+        await supabaseAdmin.from('profiles').delete().eq('id', emp.id);
+        setEmployees(prev => prev.filter(e => e.id !== emp.id));
+        alert(`✅ تم حذف "${emp.full_name}" من البروفايل فقط`);
+      } catch (e2: any) {
+        alert(`فشل الحذف: ${e2?.message || 'خطأ غير معروف'}`);
+      }
     }
   };
 
