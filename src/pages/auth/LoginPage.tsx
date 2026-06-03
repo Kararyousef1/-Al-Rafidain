@@ -29,7 +29,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
 
     try {
       // تسجيل الدخول عبر Supabase Authentication فقط (لا حسابات محلية)
-      const finalEmail = username.includes('@') ? username.trim() : `${username.trim()}@kayan.hr`;
+      const finalEmail = username.includes('@') ? username.trim() : `${username.trim()}@alrafidain.com`;
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: finalEmail,
         password,
@@ -74,7 +74,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-slate-800">شركة وادي الرافدين</h1>
           <p className="text-indigo-600 font-bold text-sm mt-1">لإنتاج المواد الصيدلانية</p>
-          <p className="text-slate-500 mt-3">سجل الدخول إلى نظام إدارة الموارد البشرية</p>
+          <p className="text-slate-500 mt-3">سجل الدخول إلى النظام   </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">

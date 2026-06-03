@@ -188,12 +188,12 @@ export default function Sidebar() {
             </div>
               <div className="overflow-hidden">
                 <div className="flex items-center gap-1.5">
-                  <p className="text-slate-800 font-semibold text-sm truncate">{user?.name || user?.full_name}</p>
+                  <p className="text-slate-800 font-semibold text-sm truncate">{user?.full_name || user?.name || 'مستخدم'}</p>
                   <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
                     <CheckCircle2 size={10} className="text-white" />
                   </span>
                 </div>
-                <p className="text-slate-500 text-xs truncate">{user.position}</p>
+                <p className="text-slate-500 text-xs truncate">{user?.position || user?.role || ''}</p>
               </div>
           </div>
         </div>
