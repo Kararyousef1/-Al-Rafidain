@@ -7,8 +7,8 @@ import LoginPage from './pages/auth/LoginPage';
 import LandingPage from './pages/public/LandingPage';
 import DisclaimerPage from './pages/public/DisclaimerPage';
 import SystemGuide from './pages/public/SystemGuide';
+import NotificationsPage from './pages/public/NotificationsPage';
 
-// ─── Lazy Loading ───
 const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard'));
 const ProblemsList      = lazy(() => import('./pages/employee/ProblemsList'));
 const ProblemDetail     = lazy(() => import('./pages/employee/ProblemDetail'));
@@ -46,7 +46,7 @@ function PageLoader() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: '16px' }}>
       <div style={{ width: '40px', height: '40px', border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ color: '#94a3b8', fontSize: '0.9rem', fontFamily: "'Tajawal', sans-serif" }}>جاري التحميل...</p>
+      <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>جاري التحميل...</p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
@@ -56,7 +56,7 @@ function AuthLoader() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f8fafc', flexDirection: 'column', gap: '16px' }}>
       <div style={{ width: '48px', height: '48px', border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ color: '#64748b', fontFamily: "'Tajawal', sans-serif" }}>جاري التحقق من الجلسة...</p>
+      <p style={{ color: '#64748b' }}>جاري التحقق من الجلسة...</p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
@@ -64,7 +64,7 @@ function AuthLoader() {
 
 function DefaultPage({ role }: { role?: string }) {
   if (role === 'developer') return <DeveloperDashboard />;
-  if (role === 'hr')    return <HRDashboard />;
+  if (role === 'hr') return <HRDashboard />;
   if (role === 'admin') return <AdminDashboard />;
   if (role === 'gatekeeper') return <GatekeeperPage />;
   return <EmployeeDashboard />;
@@ -80,44 +80,38 @@ function PageRenderer() {
       return <ProblemDetail problemId={id} />;
     }
     switch (activeView) {
+      case 'notifications': return <NotificationsPage />;
       case 'employee-dashboard': return <EmployeeDashboard />;
-      case 'employee-problems':  return <ProblemsList isHR={false} />;
-      case 'new-problem':        return <NewProblemPage />;
-      case 'employee-wellness':  return <WellnessPage />;
-      case 'employee-ai-chat':   return <AIChatPage />;
-      case 'employee-survey':    return <SurveyPage />;
-      case 'employee-training':  return <TrainingPage />;
-      case 'employee-sops':      return <SOPsPage />;
-      case 'employee-profile':   return <ProfilePage />;
-      case 'employee-contact':   return <ContactPage />;
-      case 'hr-dashboard':     return <HRDashboard />;
-      case 'hr-problems':      return <ProblemsList isHR={true} />;
-      case 'hr-analytics':
-      case 'hr-sentiment':
-      case 'hr-predictions':   return <AnalyticsPage />;
-      case 'hr-team':          return <TeamPage />;
+      case 'employee-problems': return <ProblemsList isHR={false} />;
+      case 'new-problem': return <NewProblemPage />;
+      case 'employee-wellness': return <WellnessPage />;
+      case 'employee-ai-chat': return <AIChatPage />;
+      case 'employee-survey': return <SurveyPage />;
+      case 'employee-training': return <TrainingPage />;
+      case 'employee-sops': return <SOPsPage />;
+      case 'employee-profile': return <ProfilePage />;
+      case 'employee-contact': return <ContactPage />;
+      case 'hr-dashboard': return <HRDashboard />;
+      case 'hr-problems': return <ProblemsList isHR={true} />;
+      case 'hr-analytics': case 'hr-sentiment': case 'hr-predictions': return <AnalyticsPage />;
+      case 'hr-team': return <TeamPage />;
       case 'hr-talent-market': return <TalentMarketPage />;
-      case 'hr-attendance':    return <AttendancePage />;
+      case 'hr-attendance': return <AttendancePage />;
       case 'hr-communication': return <ContactPage />;
-      case 'hr-reports':       return <ReportsPage />;
+      case 'hr-reports': return <ReportsPage />;
       case 'hr-movement-analysis': return <HRMovementAnalyticsPage />;
-      case 'gatekeeper':
-      case 'hr-movements':
-      case 'movements':
-      case 'employee-movements':
-      case 'gatekeeper-page':  
-      case 'gatekeeper-portal': return <GatekeeperPage />;
-      case 'admin-dashboard':  return <AdminDashboard />;
-      case 'admin-cms':        return <AdminLandingPageCMS />;
-      case 'admin-employees':  return <AdminEmployeesPage />;
+      case 'gatekeeper': case 'hr-movements': case 'movements': case 'employee-movements': case 'gatekeeper-page': case 'gatekeeper-portal': return <GatekeeperPage />;
+      case 'admin-dashboard': return <AdminDashboard />;
+      case 'admin-cms': return <AdminLandingPageCMS />;
+      case 'admin-employees': return <AdminEmployeesPage />;
       case 'admin-permissions': return <AdminPermissionsTree />;
       case 'admin-gatekeeper-permissions': return <AdminGatekeeperPermissions />;
-      case 'admin-reports':    return <ReportsPage />;
-      case 'admin-settings':   return <SettingsPage />;
-      case 'admin-audit-log':  return <AuditLogPage />;
-      case 'admin-sops':         return <AdminSOPsPage />;
+      case 'admin-reports': return <ReportsPage />;
+      case 'admin-settings': return <SettingsPage />;
+      case 'admin-audit-log': return <AuditLogPage />;
+      case 'admin-sops': return <AdminSOPsPage />;
       case 'admin-sops-reports': return <AdminSOPsReport />;
-      case 'admin-ai-config':  return <AIConfigPage />;
+      case 'admin-ai-config': return <AIConfigPage />;
       case 'developer-dashboard': return <DeveloperDashboard />;
       case 'supervisor-breaks': return <SupervisorBreaksPage />;
       default: return <DefaultPage role={user?.role} />;
@@ -142,69 +136,33 @@ export default function App() {
   const isPreviewMode = window.location.search.includes('preview=true');
 
   useEffect(() => { if (!isPreviewMode) initialize(); }, [isPreviewMode, initialize]);
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('view') === 'kiosk-mode') setActiveView('kiosk-mode');
   }, [setActiveView]);
-
   useEffect(() => {
     if (!user) return;
-    const defaultViews: Record<string, string> = {
-      developer: 'developer-dashboard',
-      hr: 'hr-dashboard',
-      admin: 'admin-dashboard',
-      employee: 'employee-dashboard',
-      gatekeeper: 'gatekeeper-portal',
-    };
-    setActiveView(defaultViews[user.role] ?? 'employee-dashboard');
+    const views: Record<string, string> = { developer: 'developer-dashboard', hr: 'hr-dashboard', admin: 'admin-dashboard', employee: 'employee-dashboard', gatekeeper: 'gatekeeper-portal' };
+    setActiveView(views[user.role] ?? 'employee-dashboard');
   }, [user?.role, setActiveView]);
 
-  if (isPreviewMode) {
-    return <><LandingPage onLoginClick={() => {}} /><ToastContainer /></>;
-  }
-
+  if (isPreviewMode) return <><LandingPage onLoginClick={() => {}} /><ToastContainer /></>;
   if (loading) return <AuthLoader />;
 
   if (!disclaimerPassed) {
-    return (
-      <DisclaimerPage onAccess={() => {
-        setDisclaimerPassed(true);
-        sessionStorage.setItem('disclaimer_passed', 'true');
-      }} />
-    );
+    return <DisclaimerPage onAccess={() => { setDisclaimerPassed(true); sessionStorage.setItem('disclaimer_passed', 'true'); }} />;
   }
-
   if (!guidePassed) {
-    return (
-      <SystemGuide onSkip={() => {
-        setGuidePassed(true);
-        sessionStorage.setItem('guide_passed', 'true');
-      }} />
-    );
+    return <SystemGuide onSkip={() => { setGuidePassed(true); sessionStorage.setItem('guide_passed', 'true'); }} />;
   }
-
   if (!isAuthenticated) {
-    if (showLogin) {
-      return <><LoginPage onNavigate={() => {}} /><ToastContainer /></>;
-    }
+    if (showLogin) return <><LoginPage onNavigate={() => {}} /><ToastContainer /></>;
     return <><LandingPage onLoginClick={() => setShowLogin(true)} /><ToastContainer /></>;
-  }
-
-  if (activeView === 'kiosk-mode') {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <KioskPage />
-        <ToastContainer />
-      </Suspense>
-    );
   }
 
   return (
     <div className="min-h-screen bg-slate-50" dir="rtl" style={{ fontFamily: "'Tajawal', 'Cairo', sans-serif" }}>
-      <div className={sidebarOpen ? 'block relative z-[100]' : 'hidden md:block'}>
-        <Sidebar />
-      </div>
+      <div className={sidebarOpen ? 'block relative z-[100]' : 'hidden md:block'}><Sidebar /></div>
       <Header />
       <PageRenderer />
       <ToastContainer />

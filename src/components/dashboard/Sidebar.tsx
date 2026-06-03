@@ -40,6 +40,8 @@ const navItems: NavItem[] = [
   { id: 'hr-reports', label: 'التقارير', icon: FileBarChart, roles: ['hr'], section: 'hr', permKey: 'reports' },
   // Gatekeeper
   { id: 'gatekeeper-portal', label: 'بوابة الحركة', icon: Users, roles: ['gatekeeper'], section: 'gatekeeper', permKey: 'gatekeeper-portal' },
+  // Notifications for all
+  { id: 'notifications', label: 'التبليغات', icon: MessageSquare, roles: ['employee', 'hr', 'admin', 'gatekeeper', 'developer'], section: 'notifications', permKey: 'notifications' },
   // Admin
   { id: 'admin-dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, roles: ['admin'], section: 'admin', permKey: 'dashboard' },
   { id: 'admin-cms', label: 'إدارة صفحة الزوار', icon: Globe, roles: ['admin'], section: 'admin', permKey: 'cms' },
@@ -85,11 +87,11 @@ const roleBgs: Record<UserRole, string> = {
 
 // الصلاحيات الافتراضية لكل دور في حال لم يتم تحديد صلاحيات مخصصة للمستخدم
 const defaultPermissions: Record<UserRole, string[]> = {
-  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile'],
-  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports'],
-  gatekeeper: ['gatekeeper-portal'],
-  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config'],
-  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db'],
+  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications'],
+  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications'],
+  gatekeeper: ['gatekeeper-portal', 'notifications'],
+  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'developer-db'],
+  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications'],
 };
 
 export default function Sidebar() {
