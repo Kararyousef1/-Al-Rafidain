@@ -1,7 +1,6 @@
 [build]
-  # استخدام npx لتجاوز مشكلة أذونات التنفيذ في node_modules
-  # (هذا يحدث عند نقل node_modules من Windows إلى Linux)
-  command = "npx vite build"
+  # استخدام npm rebuild لإصلاح صلاحيات التنفيذ على Linux
+  command = "npm rebuild && npx vite build"
   publish = "dist"
 
 [[redirects]]
