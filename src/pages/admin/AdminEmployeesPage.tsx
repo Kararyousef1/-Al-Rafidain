@@ -73,7 +73,8 @@ export default function AdminEmployeesPage() {
     profile_image: '', manager_id: '', supervisor_id: '', department_manager_id: '', shift: 'all',
     permissions: defaultPermissions['employee'] as string[],
     is_verified: true,
-    gatekeeper_type: 'both' as GatekeeperType
+    gatekeeper_type: 'both' as GatekeeperType,
+    gatekeeper_pin: '',  // 3 أرقام للوحة الحارس
   });
 
   const handleRoleChange = (newRole: string) => {
@@ -215,7 +216,7 @@ export default function AdminEmployeesPage() {
         <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold"><FileText size={18} /> تصدير Excel</button>
         <button onClick={fetchAuthUsers} className="flex items-center gap-2 px-4 py-2 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200 font-semibold"><Trash2 size={18} /> إدارة حسابات Auth</button>
         <button onClick={() => {
-          setFormData({ full_name: '', email: '', passcode: '', role: 'employee', rank: 'employee', manufacturing_dept: 'syrups', department: '', position: '', phone: '', location: '', profile_image: '', manager_id: '', supervisor_id: '', department_manager_id: '', shift: 'all', permissions: defaultPermissions['employee'], is_verified: true, gatekeeper_type: 'both' });
+          setFormData({ full_name: '', email: '', passcode: '', role: 'employee', rank: 'employee', manufacturing_dept: 'syrups', department: '', position: '', phone: '', location: '', profile_image: '', manager_id: '', supervisor_id: '', department_manager_id: '', shift: 'all', permissions: defaultPermissions['employee'], is_verified: true, gatekeeper_type: 'both', gatekeeper_pin: '' });
           setIsEditMode(false); setIsModalOpen(true);
         }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold shadow-sm"><Plus size={18} /> إضافة مستخدم جديد</button>
       </div>
@@ -485,6 +486,7 @@ export default function AdminEmployeesPage() {
                     supervisor_id: selectedEmp.supervisor_id || '', department_manager_id: selectedEmp.department_manager_id || '',
                     shift: selectedEmp.shift || 'all', permissions: selectedEmp.permissions || defaultPermissions[selectedEmp.role] || ['dashboard', 'profile'],
                     gatekeeper_type: selectedEmp.gatekeeper_type || 'both', is_verified: true,
+                    gatekeeper_pin: selectedEmp.gatekeeper_pin || '',
                   });
                   setIsEditMode(true); setIsViewModalOpen(false); setIsModalOpen(true);
                 }} className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-semibold text-sm"><Edit2 size={16} className="inline ml-1" /> تعديل</button>
