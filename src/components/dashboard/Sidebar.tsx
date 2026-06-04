@@ -135,11 +135,10 @@ export default function Sidebar() {
       const userRole = (user.role as UserRole) || 'employee';
       if (!item.roles.includes(userRole)) return false;
 
-      // الصلاحيات الفعالة: دمج الصلاحيات الافتراضية للدور مع أي صلاحيات مخصصة إضافية
-      // هذا يضمن ظهور جميع عناصر الشريط الجانبي الافتراضية دائماً، حتى لو كانت قاعدة البيانات تحتوي على صلاحيات محدودة
-      const roleDefaults = defaultPermissions[userRole] || defaultPermissions['employee'];
-      const customPermissions = (user.permissions && Array.isArray(user.permissions)) ? user.permissions : [];
-      const effectivePermissions = [...new Set([...roleDefaults, ...customPermissions])];
+      // الصلاحيات الفعالة: نستخدم صلاحيات قاعدة البيانات إذا كانت موجودة،
+      // وإلا نستخدم الصلاحيات الافتراضية للدور
+      const customPermissions = (user.permissions && Array.isArray(user.permissions) && user.permissions.length > 0) ? user.permissions : null;
+      const effectivePermissions = customPermissions || defaultPermissions[userRole] || defaultPermissions['employee'];
 
       // إذا كان للعنصر مفتاح صلاحية محدد، نتحقق من وجوده في الصلاحيات الفعالة
       if (item.permKey) {
