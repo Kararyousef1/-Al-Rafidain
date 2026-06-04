@@ -107,7 +107,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-600 to-red-700 rounded-2xl p-6 text-white">
+      <div className="bg-gradient-to-r from-orange-600 to-red-700 rounded-2xl p-4 sm:p-6 text-white">
         <p className="text-white/70 text-sm">لوحة المشرف</p>
         <h2 className="text-2xl font-extrabold mt-1">إدارة النظام الكاملة</h2>
         <p className="text-white/60 text-sm mt-1">تحكم كامل في جميع جوانب المنصة</p>

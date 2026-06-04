@@ -759,14 +759,14 @@ ${dbTables.map(t => `│ ${t.name.padEnd(25)} ${String(t.rows).padStart(6)} سج
   }
 
   return (
-    <div className="space-y-6 animate-fade-in" dir="rtl">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in" dir="rtl">
       {/* ── Header Banner ───────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl border border-gray-200 shadow-xl">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
         <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
         
-        <div className="relative z-10 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="relative z-10 p-4 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
               <Terminal size={28} className="text-white" />

@@ -119,7 +119,7 @@ function PageRenderer() {
   };
 
   return (
-    <div className={`transition-all duration-300 min-h-screen md:pt-16 pt-0 ${sidebarOpen ? 'md:mr-64' : 'md:mr-16'} mr-0`}>
+    <div className={`transition-all duration-300 min-h-screen pt-16 ${sidebarOpen ? 'md:mr-64' : 'md:mr-16'} mr-0`}>
       <main className="p-4 sm:p-6 min-h-[calc(100vh-64px)]">
         <Suspense fallback={<PageLoader />}>{renderPage()}</Suspense>
       </main>

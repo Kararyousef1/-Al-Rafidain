@@ -74,7 +74,7 @@ export default function AdminEmployeesPage() {
     permissions: defaultPermissions['employee'] as string[],
     is_verified: true,
     gatekeeper_type: 'both' as GatekeeperType,
-    gatekeeper_pin: '',  // 3 أرقام للوحة الحارس
+    gatekeeper_pin: '',
   });
 
   const handleRoleChange = (newRole: string) => {
@@ -131,6 +131,7 @@ export default function AdminEmployeesPage() {
           profile_image: formData.profile_image, manager_id: formData.manager_id || null,
           supervisor_id: formData.supervisor_id || null, department_manager_id: formData.department_manager_id || null,
           shift: formData.shift, permissions: formData.permissions,
+          gatekeeper_pin: formData.gatekeeper_pin || '',
         }).eq('id', selectedEmp.id);
         if (formData.passcode.length >= 6) {
           await supabaseAdmin.auth.admin.updateUserById(selectedEmp.id, { password: formData.passcode }).catch(() => {});
@@ -153,6 +154,7 @@ export default function AdminEmployeesPage() {
           manager_id: formData.manager_id || null, supervisor_id: formData.supervisor_id || null,
           department_manager_id: formData.department_manager_id || null, shift: formData.shift,
           status: 'active', permissions: formData.permissions,
+          gatekeeper_pin: formData.gatekeeper_pin || '',
         });
         setIsModalOpen(false); await fetchEmployees();
         alert(`✅ تم إنشاء "${formData.full_name}"\nيمكنه الدخول بـ: ${formData.email}@alrafidain.com`);
@@ -190,7 +192,6 @@ export default function AdminEmployeesPage() {
 
   return (
     <div className="space-y-6 pb-20 animate-fade-in">
-      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-4 text-white">
           <p className="text-2xl font-black">{employees.length}</p>
@@ -210,7 +211,6 @@ export default function AdminEmployeesPage() {
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex flex-wrap gap-3 items-center">
         <button onClick={fetchEmployees} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold"><RefreshCw size={18} /> تحديث</button>
         <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold"><FileText size={18} /> تصدير Excel</button>
@@ -221,7 +221,6 @@ export default function AdminEmployeesPage() {
         }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold shadow-sm"><Plus size={18} /> إضافة مستخدم جديد</button>
       </div>
 
-      {/* Auth Section */}
       {showAuthUsers && authUsers.length > 0 && (
         <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
           <h3 className="font-bold text-rose-800 mb-3">حسابات Authentication</h3>
@@ -239,7 +238,6 @@ export default function AdminEmployeesPage() {
         </div>
       )}
 
-      {/* Search */}
       <div className="flex flex-wrap gap-3">
         <div className="flex-1 min-w-[200px] relative">
           <Search size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -251,7 +249,6 @@ export default function AdminEmployeesPage() {
         </select>
       </div>
 
-      {/* List */}
       {loading ? <div className="flex justify-center py-20"><Loader className="animate-spin" size={24} /></div>
       : error ? <div className="bg-red-50 p-6 rounded-xl"><ServerCrash size={24} /> {error}</div>
       : employees.length === 0 ? (
@@ -286,7 +283,6 @@ export default function AdminEmployeesPage() {
         </div>
       )}
 
-      {/* ── ADD/EDIT MODAL ── كامل بكل الخيارات ── */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-8">
@@ -296,7 +292,6 @@ export default function AdminEmployeesPage() {
             </div>
             <form onSubmit={handleSave} className="p-6 max-h-[70vh] overflow-y-auto">
               <div className="grid md:grid-cols-2 gap-6">
-                {/* Column 1: Basic Info */}
                 <div className="space-y-4">
                   <h4 className="font-bold text-slate-800 border-b pb-2">المعلومات الأساسية</h4>
                   <div>
@@ -309,7 +304,6 @@ export default function AdminEmployeesPage() {
                       <input required type="text" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="flex-1 border rounded-xl px-3 py-2 outline-none focus:border-indigo-500 text-left" dir="ltr" placeholder="ahmed" />
                       <span className="text-sm text-slate-400 font-mono whitespace-nowrap">@alrafidain.com</span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">سيتم إنشاء الحساب بـ: {formData.email}@alrafidain.com</p>
                   </div>
                   {isEditMode && selectedEmp && (
                     <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
@@ -341,7 +335,6 @@ export default function AdminEmployeesPage() {
                   </div>
                 </div>
 
-                {/* Column 2: Position & Hierarchy */}
                 <div className="space-y-4">
                   <h4 className="font-bold text-slate-800 border-b pb-2">المنصب والهيكلية</h4>
                   <div className="grid grid-cols-2 gap-4">
@@ -368,13 +361,27 @@ export default function AdminEmployeesPage() {
                     </div>
                   </div>
                   {formData.role === 'gatekeeper' && (
-                    <div className="bg-cyan-50 p-4 rounded-xl border border-cyan-100">
-                      <label className="block text-sm font-bold text-cyan-800 mb-2">نوع حركة الحارس</label>
-                      <select value={formData.gatekeeper_type} onChange={e => setFormData({...formData, gatekeeper_type: e.target.value as GatekeeperType})} className="w-full border border-cyan-200 rounded-xl px-3 py-2 outline-none focus:border-cyan-500 bg-white">
-                        <option value="employee_movement">حركة الموظفين فقط</option>
-                        <option value="visitor_movement">حركة الزوار فقط</option>
-                        <option value="both">كلاهما</option>
-                      </select>
+                    <div className="bg-cyan-50 p-4 rounded-xl border border-cyan-100 space-y-3">
+                      <div>
+                        <label className="block text-sm font-bold text-cyan-800 mb-2">نوع حركة الحارس</label>
+                        <select value={formData.gatekeeper_type} onChange={e => setFormData({...formData, gatekeeper_type: e.target.value as GatekeeperType})} className="w-full border border-cyan-200 rounded-xl px-3 py-2 outline-none focus:border-cyan-500 bg-white">
+                          <option value="employee_movement">حركة الموظفين فقط</option>
+                          <option value="visitor_movement">حركة الزوار فقط</option>
+                          <option value="both">كلاهما</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-cyan-800 mb-2">🔐 الرمز السري للبوابة (3 أرقام)</label>
+                        <input
+                          type="text"
+                          maxLength={3}
+                          value={formData.gatekeeper_pin}
+                          onChange={e => setFormData({...formData, gatekeeper_pin: e.target.value.replace(/\D/g, '')})}
+                          placeholder="123"
+                          className="w-full border border-cyan-200 rounded-xl px-4 py-2 outline-none focus:border-cyan-500 text-center font-mono tracking-widest text-lg bg-white"
+                        />
+                        <p className="text-xs text-cyan-600 mt-1">الرمز المستخدم للدخول إلى بوابة الحارس</p>
+                      </div>
                     </div>
                   )}
                   <div>
@@ -391,8 +398,6 @@ export default function AdminEmployeesPage() {
                     <label className="block text-sm font-semibold mb-1">المسمى الوظيفي</label>
                     <input required type="text" value={formData.position} onChange={e => setFormData({...formData, position: e.target.value})} className="w-full border rounded-xl px-3 py-2 outline-none focus:border-indigo-500" />
                   </div>
-
-                  {/* Hierarchy */}
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-semibold mb-1">المدير المباشر</label>
@@ -416,8 +421,6 @@ export default function AdminEmployeesPage() {
                       </select>
                     </div>
                   </div>
-
-                  {/* Shift */}
                   <div>
                     <label className="block text-sm font-semibold mb-1">الوردية المخصصة (Shift)</label>
                     <select value={formData.shift} onChange={e => setFormData({...formData, shift: e.target.value})} className="w-full border rounded-xl px-3 py-2 outline-none focus:border-indigo-500">
@@ -430,7 +433,6 @@ export default function AdminEmployeesPage() {
                 </div>
               </div>
 
-              {/* Permissions */}
               <div className="mt-8 border-t pt-6">
                 <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><ShieldCheck className="text-indigo-600" /> صلاحيات الشريط الجانبي</h4>
                 <div className="space-y-4">
@@ -469,7 +471,6 @@ export default function AdminEmployeesPage() {
         </div>
       )}
 
-      {/* ── VIEW MODAL ── */}
       {isViewModalOpen && selectedEmp && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl p-6">

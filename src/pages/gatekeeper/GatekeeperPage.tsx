@@ -966,11 +966,11 @@ export default function GatekeeperPage() {
   }
 
   return (
-    <div className="page-container">
+    <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="page-title">🚪 نظام إدارة البوابة</h1>
-        <p className="page-subtitle">تتبع دخول وخروج الزوار بسهولة</p>
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">🚪 نظام إدارة البوابة</h1>
+        <p className="text-slate-500 text-xs sm:text-sm mt-1">تتبع دخول وخروج الزوار والموظفين بسهولة</p>
       </div>
 
       {/* رسالة تنبيه إذا لم تكن قاعدة البيانات متصلة */}

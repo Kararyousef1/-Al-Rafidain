@@ -456,7 +456,7 @@ export default function EmployeeDashboard() {
       {/* ── Quick Actions ────────────────────────────────── */}
       <div>
         <h3 className="text-sm font-bold text-slate-600 mb-3">الإجراءات السريعة</h3>
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-3">
           {QUICK_ACTIONS.map((action, i) => {
             const Icon = action.icon;
             return (
