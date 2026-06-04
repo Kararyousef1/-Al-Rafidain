@@ -13,11 +13,11 @@ import {
 
 // الصلاحيات الافتراضية لكل دور لضمان عدم ظهور شريط جانبي فارغ
 const defaultRolePermissions: Record<UserRole, string[]> = {
-  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile'],
-  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports'],
-  gatekeeper: ['gatekeeper-portal'],
-  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'ai-config'],
-  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db'],
+  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'attendance', 'leave-requests'],
+  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications'],
+  gatekeeper: ['gatekeeper-portal', 'notifications'],
+  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
+  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard'],
 };
 
 const getEffectivePermissions = (role: UserRole, dbPermissions?: string[] | null) => {

@@ -135,10 +135,10 @@ export default function Sidebar() {
       const userRole = (user.role as UserRole) || 'employee';
       if (!item.roles.includes(userRole)) return false;
 
-      // الصلاحيات الفعالة: نستخدم صلاحيات قاعدة البيانات إذا كانت موجودة،
-      // وإلا نستخدم الصلاحيات الافتراضية للدور
+      // الصلاحيات الفعالة: دمج الصلاحيات من قاعدة البيانات مع الصلاحيات الافتراضية
+      // الصلاحيات من قاعدة البيانات تحل محل الافتراضية (تتحكم كلياً)
       const customPermissions = (user.permissions && Array.isArray(user.permissions) && user.permissions.length > 0) ? user.permissions : null;
-      const effectivePermissions = customPermissions || defaultPermissions[userRole] || defaultPermissions['employee'];
+      const effectivePermissions = customPermissions ?? defaultPermissions[userRole] ?? defaultPermissions['employee'];
 
       // إذا كان للعنصر مفتاح صلاحية محدد، نتحقق من وجوده في الصلاحيات الفعالة
       if (item.permKey) {
