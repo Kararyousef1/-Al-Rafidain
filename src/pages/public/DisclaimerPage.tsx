@@ -42,10 +42,10 @@ export default function DisclaimerPage({ onAccess }: { onAccess: () => void }) {
         {/* نص التنويه */}
         <div className="bg-white/5 rounded-2xl p-6 mb-6 border border-white/10 space-y-4 text-right">
           <p className="text-gray-300 leading-relaxed text-lg">
-            هذا الموقع <strong className="text-amber-400">قيد التطوير</strong> وتم نشره لغرض عرضه على الإدارة فقط.
+            هذا الموقع <strong className="text-amber-400">قيد التطوير والإعداد</strong> وتم نشره لعرض الإصدار التجريبي.
           </p>
           <p className="text-gray-400 leading-relaxed">
-            تم أخذ بعض البيانات من موقع الشركة الرسمي (كالصور والمنتجات والموقع والاسم) لغرض <strong className="text-indigo-400">محاكاة الواقع</strong>.
+            تم أخذ بعض البيانات من موقع الشركة الرسمي (كالصور والمنتجات والموقع والاسم) لغرض <strong className="text-indigo-400">محاكاة الواقع وإعداد البيئة التجريبية</strong>.
           </p>
           <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
             <p className="text-red-400 font-semibold">
@@ -86,7 +86,7 @@ export default function DisclaimerPage({ onAccess }: { onAccess: () => void }) {
         </form>
 
         <p className="text-gray-600 text-xs text-center mt-6">
-          هذا النظام مملوك لشركة وادي الرافدين لإنتاج المواد الصيدلانية © {new Date().getFullYear()}
+          هذا النظام مملوك لشركة الرافدين لإنتاج المواد الصيدلانية © {new Date().getFullYear()}
         </p>
       </div>
     </div>
