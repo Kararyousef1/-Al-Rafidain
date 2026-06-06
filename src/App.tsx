@@ -9,6 +9,7 @@ import DisclaimerPage from './pages/public/DisclaimerPage';
 import SystemGuide from './pages/public/SystemGuide';
 import NotificationsPage from './pages/public/NotificationsPage';
 import StructureManager from './pages/developer/StructureManager';
+import WelcomeModal from './components/dashboard/WelcomeModal';
 
 const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard'));
 const ProblemsList      = lazy(() => import('./pages/employee/ProblemsList'));
@@ -171,6 +172,7 @@ export default function App() {
       <div className={sidebarOpen ? 'block relative z-[100]' : 'hidden md:block'}><Sidebar /></div>
       <Header />
       <PageRenderer />
+      <WelcomeModal />
       <ToastContainer />
     </div>
   );
