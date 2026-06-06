@@ -274,7 +274,7 @@ export default function Sidebar() {
               <span className="text-xs text-slate-600 font-medium">الصحة: {user.wellnessScore || 0}%</span>
             </div>
             <button
-              onClick={() => setActiveView(user.role === 'employee' ? 'employee-profile' : 'hr-dashboard')}
+              onClick={() => setActiveView('notifications')}
               className="relative p-2.5 rounded-xl hover:bg-slate-50 text-slate-500 hover:text-slate-700 transition-colors"
             >
               <Bell size={16} />
