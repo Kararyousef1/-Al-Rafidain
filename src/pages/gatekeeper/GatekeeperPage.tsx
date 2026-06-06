@@ -4,7 +4,7 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
-import Toast from '../../components/ui/Toast';
+import { useUIStore } from '../../store';
 import type { 
   GatekeeperSession, 
   GatekeeperVisitorLog, 
@@ -46,7 +46,6 @@ export default function GatekeeperPage() {
   const [takeoverPin, setTakeoverPin] = useState('');
   const [editingVisitor, setEditingVisitor] = useState<GatekeeperVisitorLog | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
 
   // أوقات السماح لفتح الورديات
@@ -57,7 +56,7 @@ export default function GatekeeperPage() {
 
   // حالات حركة الموظفين (تحديد التبويب الافتراضي بناءً على نوع الحارس)
   const initialTab = user?.gatekeeper_type === 'employee_movement' ? 'employees' : 'visitors';
-  const [activeTab, setActiveTab] = useState<'visitors' | 'employees'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'visitors' | 'employees' | 'breaks'>(initialTab);
   const [employees, setEmployees] = useState<any[]>([]);
   const [movements, setMovements] = useState<any[]>([]);
   const [approvedBreaks, setApprovedBreaks] = useState<any[]>([]);
@@ -191,6 +190,17 @@ export default function GatekeeperPage() {
 
     if (!gkName.trim() || gkPin.length !== 3) {
       showToast('يجب إدخال اسمك ورمز سري من 3 أرقام لبدء الوردية', 'error');
+      return;
+    }
+    
+    // التحقق من أن الرمز السري يطابق الرمز المخزن في ملف الحارس
+    if (user?.gatekeeper_pin && gkPin !== user.gatekeeper_pin) {
+      showToast('❌ الرمز السري غير صحيح! الرمز المسجل في حسابك لا يتطابق مع ما أدخلته.', 'error');
+      return;
+    }
+    // إذا لم يكن هناك رمز مسجل للحارس، نطلب منه التسجيل أولاً عبر لوحة الإدارة
+    if (!user?.gatekeeper_pin) {
+      showToast('⚠️ عذراً، لا يوجد رمز حارس مسجل لحسابك. يرجى مطالبة المدير بتعيين رمز حارس لك من 3 أرقام في لوحة إدارة الموظفين.', 'error');
       return;
     }
     setLoading(true);
@@ -661,9 +671,9 @@ export default function GatekeeperPage() {
     }
   };
 
-  const showToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+  const { addToast } = useUIStore();
+  const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning') => {
+    addToast(message, type as any);
   };
 
   const calculateDuration = (departure: string, returned: string | null) => {
@@ -1749,14 +1759,6 @@ export default function GatekeeperPage() {
         </form>
       </Modal>
 
-      {/* Toast Notification */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
     </div>
   );
 }

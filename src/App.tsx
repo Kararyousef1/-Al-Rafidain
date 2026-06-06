@@ -41,6 +41,8 @@ const AdminSOPsPage     = lazy(() => import('./pages/admin/AdminSOPsPage'));
 const AdminSOPsReport   = lazy(() => import('./pages/admin/AdminSOPsReport'));
 const SupervisorBreaksPage = lazy(() => import('./pages/supervisor/SupervisorBreaksPage'));
 const DeveloperDashboard = lazy(() => import('./components/dashboard/DeveloperDashboard'));
+const MyAttendancePage = lazy(() => import('./pages/employee/MyAttendancePage'));
+const LeaveRequestPage = lazy(() => import('./pages/employee/LeaveRequestPage'));
 
 function PageLoader() {
   return (
@@ -91,6 +93,8 @@ function PageRenderer() {
       case 'employee-sops': return <SOPsPage />;
       case 'employee-profile': return <ProfilePage />;
       case 'employee-contact': return <ContactPage />;
+      case 'employee-attendance': return <MyAttendancePage />;
+      case 'employee-leave-requests': return <LeaveRequestPage />;
       case 'hr-dashboard': return <HRDashboard />;
       case 'hr-problems': return <ProblemsList isHR={true} />;
       case 'hr-analytics': case 'hr-sentiment': case 'hr-predictions': return <AnalyticsPage />;

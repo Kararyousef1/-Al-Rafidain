@@ -11,13 +11,15 @@ import {
   mockWellnessData, mockEmployees, mockAnalytics, mockAuditLogs
 } from '../data/mockData';
 
-// الصلاحيات الافتراضية لكل دور لضمان عدم ظهور شريط جانبي فارغ
+// الصلاحيات الافتراضية لكل دور
 const defaultRolePermissions: Record<UserRole, string[]> = {
   employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'attendance', 'leave-requests'],
   hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications'],
   gatekeeper: ['gatekeeper-portal', 'notifications'],
   admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
   developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard'],
+  supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
+  manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
 };
 
 const getEffectivePermissions = (role: UserRole, dbPermissions?: string[] | null) => {
@@ -27,24 +29,69 @@ const getEffectivePermissions = (role: UserRole, dbPermissions?: string[] | null
   return defaultRolePermissions[role] || defaultRolePermissions['employee'];
 };
 
-// ══════════════════════════════════════════
-//  AUTH STORE — مع Supabase حقيقي
-// ══════════════════════════════════════════
+let _profileChannel: any = null;
+
+const setupRealtimeProfileSubscription = (userId: string | undefined, setFn: any) => {
+  if (!userId) return;
+  if (_profileChannel) {
+    supabase.removeChannel(_profileChannel);
+    _profileChannel = null;
+  }
+  
+  // يشترك في تغييرات جدول profiles للمستخدم الحالي
+  const channel = supabase
+    .channel(`profile-updates-${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'profiles',
+        filter: `id=eq.${userId}`,
+      },
+      async (payload) => {
+        console.log('🔄 Profile updated in real-time, refreshing sidebar permissions...');
+        const newProfile = payload.new as any;
+        const role = (newProfile.role as UserRole) || 'employee';
+        
+        const { data: freshProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
+        
+        if (freshProfile) {
+          setFn({
+            user: {
+              ...freshProfile,
+              permissions: getEffectivePermissions(role, freshProfile.permissions),
+            },
+          });
+          console.log('✅ Sidebar permissions updated from real-time subscription');
+        }
+      }
+    )
+    .subscribe();
+  
+  _profileChannel = channel;
+};
+
 interface AuthState {
-  user:            User | null;
+  user: User | null;
   isAuthenticated: boolean;
-  loading:         boolean;
-  initialize:      () => Promise<void>;
-  login:           (email: string, password: string) => Promise<boolean>;
-  loginLocal:      (username: string, role: string, fullName: string) => void;
-  logout:          () => Promise<void>;
-  updateUser:      (data: Partial<User>) => void;
+  loading: boolean;
+  initialize: () => Promise<void>;
+  login: (email: string, password: string) => Promise<boolean>;
+  loginLocal: (username: string, role: string, fullName: string) => void;
+  logout: () => Promise<void>;
+  updateUser: (data: Partial<User>) => void;
+  refreshUser: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user:            null,
+export const useAuthStore = create<AuthState>((set, get) => ({
+  user: null,
   isAuthenticated: false,
-  loading:         true,
+  loading: true,
 
   initialize: async () => {
     set({ loading: true });
@@ -76,28 +123,28 @@ export const useAuthStore = create<AuthState>((set) => ({
       
       const { data: { session } } = await supabase.auth.getSession();
 
-       if (session?.user) {
-         const { data: profile } = await supabase
-           .from('profiles')
-           .select('*')
-           .eq('id', session.user.id)
-           .maybeSingle();
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
 
-         const role = (profile?.role as UserRole) || 'employee';
-         set({
-           user: profile ? {
-             ...profile,
-             permissions: getEffectivePermissions(role, profile.permissions),
-           } : {
-             ...mockUser,
-             id:    session.user.id,
-             email: session.user.email ?? '',
-             role:  role,
-             permissions: getEffectivePermissions(role, []),
-           },
-           isAuthenticated: true,
-         });
-       }
+        const role = (profile?.role as UserRole) || 'employee';
+        set({
+          user: profile ? {
+            ...profile,
+            permissions: getEffectivePermissions(role, profile.permissions),
+          } : {
+            ...mockUser,
+            id: session.user.id,
+            email: session.user.email ?? '',
+            role: role,
+            permissions: getEffectivePermissions(role, []),
+          },
+          isAuthenticated: true,
+        });
+      }
 
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
@@ -105,32 +152,45 @@ export const useAuthStore = create<AuthState>((set) => ({
           return;
         }
         if (event === 'SIGNED_IN' && session.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          const role = (profile?.role as UserRole) || 'employee';
-          set({
-            user: profile ? {
-              ...profile,
-              permissions: getEffectivePermissions(role, profile.permissions),
-            } : {
-              ...mockUser,
-              id:    session.user.id,
-              email: session.user.email ?? '',
-              role:  role,
-              permissions: getEffectivePermissions(role, []),
-            },
-            isAuthenticated: true,
-          });
+          await get().refreshUser();
+          setupRealtimeProfileSubscription(session.user.id, set);
         }
       });
+
+      if (session?.user) {
+        setupRealtimeProfileSubscription(session.user.id, set);
+      }
     } catch (err) {
       console.error('Auth init error:', err);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  /** دالة لإعادة تحميل بيانات المستخدم من Supabase فوراً */
+  refreshUser: async () => {
+    const state = get();
+    if (!state.isAuthenticated || !state.user?.id) return;
+    
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', state.user.id)
+        .maybeSingle();
+
+      if (profile) {
+        const role = (profile.role as UserRole) || 'employee';
+        set({
+          user: {
+            ...profile,
+            permissions: getEffectivePermissions(role, profile.permissions),
+          },
+        });
+        console.log('✅ User profile manually refreshed');
+      }
+    } catch (err) {
+      console.error('Error refreshing user:', err);
     }
   },
 
@@ -155,13 +215,14 @@ export const useAuthStore = create<AuthState>((set) => ({
             permissions: getEffectivePermissions(role, profile.permissions),
           } : {
             ...mockUser,
-            id:    data.user.id,
+            id: data.user.id,
             email: data.user.email ?? '',
-            role:  role,
+            role: role,
             permissions: getEffectivePermissions(role, []),
           },
           isAuthenticated: true,
         });
+        setupRealtimeProfileSubscription(data.user.id, set);
       }
       return true;
     } catch (err) {
@@ -201,7 +262,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     localStorage.removeItem('user');
     localStorage.removeItem('userRole');
-    
+    if (_profileChannel) {
+      supabase.removeChannel(_profileChannel);
+      _profileChannel = null;
+    }
     await supabase.auth.signOut();
     set({ user: null, isAuthenticated: false });
   },
@@ -216,47 +280,43 @@ export const useAuthStore = create<AuthState>((set) => ({
 //  PROBLEM STORE
 // ══════════════════════════════════════════
 interface ProblemState {
-  problems:      Problem[];
-  addProblem:    (problem: Omit<Problem, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  problems: Problem[];
+  addProblem: (problem: Omit<Problem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateProblem: (id: string, data: Partial<Problem>) => void;
   deleteProblem: (id: string) => void;
-  addComment:    (problemId: string, text: string, authorId: string, authorName: string, authorRole: string) => void;
+  addComment: (problemId: string, text: string, authorId: string, authorName: string, authorRole: string) => void;
 }
 
 export const useProblemStore = create<ProblemState>((set) => ({
   problems: mockProblems,
-
   addProblem: (problem) =>
     set((state) => ({
       problems: [{
         ...problem,
-        id:        Date.now().toString(),
+        id: Date.now().toString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        comments:  [],
+        comments: [],
         timeline: [{
-          id:          '1',
-          event:       'تم الإنشاء',
+          id: '1',
+          event: 'تم الإنشاء',
           description: 'تم رفع المشكلة',
-          timestamp:   new Date().toISOString(),
-          actor:       'النظام',
-          type:        'created',
+          timestamp: new Date().toISOString(),
+          actor: 'النظام',
+          type: 'created',
         }],
       }, ...state.problems],
     })),
-
   updateProblem: (id, data) =>
     set((state) => ({
       problems: state.problems.map((p) =>
         p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
       ),
     })),
-
   deleteProblem: (id) =>
     set((state) => ({
       problems: state.problems.filter((p) => p.id !== id),
     })),
-
   addComment: (problemId, text, authorId, authorName, authorRole) =>
     set((state) => ({
       problems: state.problems.map((p) =>
@@ -264,12 +324,12 @@ export const useProblemStore = create<ProblemState>((set) => ({
           ? {
               ...p,
               comments: [...(p.comments ?? []), {
-                id:         Date.now().toString(),
+                id: Date.now().toString(),
                 text,
                 authorId,
                 authorName,
                 authorRole: authorRole as any,
-                createdAt:  new Date().toISOString(),
+                createdAt: new Date().toISOString(),
               }],
               updatedAt: new Date().toISOString(),
             }
@@ -279,12 +339,12 @@ export const useProblemStore = create<ProblemState>((set) => ({
 }));
 
 // ══════════════════════════════════════════
-//  UI STORE — مع persist للإعدادات
+//  UI STORE
 // ══════════════════════════════════════════
 interface Toast {
-  id:      string;
+  id: string;
   message: string;
-  type:    'success' | 'error' | 'warning' | 'info';
+  type: 'success' | 'error' | 'warning' | 'info';
 }
 
 export type { LandingConfig, LandingVideo, LandingProduct, LandingNavLink, LandingStat } from '../types/landing';
@@ -344,61 +404,60 @@ const defaultLandingConfig: LandingConfig = {
 };
 
 interface UIState {
-  sidebarOpen:          boolean;
-  activeView:           string;
-  landingConfig:        LandingConfig;
-  userPermissions:      string[];
-  isLoadingConfig?:     boolean;
-  isSavingConfig?:      boolean;
-  notifications:        Notification[];
-  wellnessData:         WellnessData[];
-  chatMessages:         ChatMessage[];
-  auditLogs:            AuditLog[];
-  employees:            Employee[];
-  analytics:            Analytics;
-  toasts:               Toast[];
-  toggleSidebar:        () => void;
-  setSidebarOpen:       (open: boolean) => void;
-  setActiveView:        (view: string) => void;
-  updateLandingConfig:  (config: Partial<LandingConfig>) => void;
-  fetchLandingConfig:   () => Promise<void>;
-  saveLandingConfig:    (config: LandingConfig) => Promise<{ success: boolean; error?: string }>;
-  uploadImage:          (file: File, path: string) => Promise<string | null>;
+  sidebarOpen: boolean;
+  activeView: string;
+  landingConfig: LandingConfig;
+  userPermissions: string[];
+  isLoadingConfig?: boolean;
+  isSavingConfig?: boolean;
+  notifications: Notification[];
+  wellnessData: WellnessData[];
+  chatMessages: ChatMessage[];
+  auditLogs: AuditLog[];
+  employees: Employee[];
+  analytics: Analytics;
+  toasts: Toast[];
+  toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  setActiveView: (view: string) => void;
+  updateLandingConfig: (config: Partial<LandingConfig>) => void;
+  fetchLandingConfig: () => Promise<void>;
+  saveLandingConfig: (config: LandingConfig) => Promise<{ success: boolean; error?: string }>;
+  uploadImage: (file: File, path: string) => Promise<string | null>;
   markNotificationRead: (id: string) => void;
-  markAllRead:          () => void;
-  addWellnessEntry:     (entry: WellnessData) => void;
-  addChatMessage:       (message: ChatMessage) => void;
-  clearChat:            () => void;
-  addToast:             (message: string, type?: Toast['type']) => void;
-  removeToast:          (id: string) => void;
+  markAllRead: () => void;
+  addWellnessEntry: (entry: WellnessData) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  clearChat: () => void;
+  addToast: (message: string, type?: Toast['type']) => void;
+  removeToast: (id: string) => void;
 }
 
-// دالة مساعدة للتحقق مما إذا كان المستخدم محلياً (لا يوجد اتصال بـ Supabase)
 const isLocalUser = () => {
   const user = localStorage.getItem('user');
-  return !!user; // إذا وجد مستخدم مخزن محلياً
+  return !!user;
 };
 
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
-      sidebarOpen:   true,
-      activeView:    'dashboard',
+      sidebarOpen: true,
+      activeView: 'dashboard',
       landingConfig: defaultLandingConfig,
       userPermissions: [],
       isLoadingConfig: false,
       isSavingConfig: false,
       notifications: mockNotifications,
-      wellnessData:  mockWellnessData,
-      chatMessages:  [],
-      auditLogs:     mockAuditLogs,
-      employees:     mockEmployees,
-      analytics:     mockAnalytics,
-      toasts:        [],
+      wellnessData: mockWellnessData,
+      chatMessages: [],
+      auditLogs: mockAuditLogs,
+      employees: mockEmployees,
+      analytics: mockAnalytics,
+      toasts: [],
 
-      toggleSidebar:  () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setActiveView:  (view) => set((state) => {
+      setActiveView: (view) => set((state) => {
         if (typeof window !== 'undefined' && window.innerWidth < 1024) {
           return { activeView: view, sidebarOpen: false };
         }
@@ -407,12 +466,10 @@ export const useUIStore = create<UIState>()(
       updateLandingConfig: (config) => set((state) => ({ landingConfig: { ...state.landingConfig, ...config } })),
 
       fetchLandingConfig: async () => {
-        // إذا كان المستخدم محلياً، لا نحاول الاتصال بـ Supabase
         if (isLocalUser()) {
           set({ isLoadingConfig: false });
           return;
         }
-        
         set({ isLoadingConfig: true });
         try {
           const { data, error } = await supabase.from('system_settings').select('landing_config').eq('id', 'singleton').single();
@@ -429,12 +486,10 @@ export const useUIStore = create<UIState>()(
       },
 
       saveLandingConfig: async (config: LandingConfig) => {
-        // إذا كان المستخدم محلياً، فقط نحفظ في الذاكرة
         if (isLocalUser()) {
           set({ landingConfig: config });
           return { success: true };
         }
-        
         set({ isSavingConfig: true });
         try {
           const { error } = await supabase.from('system_settings')
@@ -453,11 +508,9 @@ export const useUIStore = create<UIState>()(
       },
 
       uploadImage: async (file: File, path: string) => {
-        // إذا كان المستخدم محلياً، نستخدم رابط محلي
         if (isLocalUser()) {
           return URL.createObjectURL(file);
         }
-        
         try {
           const fileExt = file.name.split('.').pop();
           const fileName = `${path}/${Date.now()}.${fileExt}`;
@@ -509,10 +562,10 @@ export const useUIStore = create<UIState>()(
         })),
     }),
     {
-      name:    'kayan-hr-ui',
+      name: 'kayan-hr-ui',
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
-        activeView:  state.activeView,
+        activeView: state.activeView,
         landingConfig: state.landingConfig,
       }),
     }

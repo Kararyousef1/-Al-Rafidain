@@ -6,6 +6,12 @@ export interface GatekeeperSession {
   created_by?: string;
   is_active: boolean;
   visitor_count: number;
+  shift_type?: string;
+  gatekeeper_name?: string;
+  pin_code?: string;
+  expected_end_time?: string;
+  handover_status?: string;
+  temp_pin?: string;
 }
 
 export interface GatekeeperVisitor {

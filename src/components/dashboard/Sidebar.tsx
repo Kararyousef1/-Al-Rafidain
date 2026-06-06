@@ -29,6 +29,8 @@ const navItems: NavItem[] = [
   { id: 'employee-ai-chat', label: 'محادثة AI', icon: Bot, roles: ['employee'], section: 'employee', permKey: 'ai-chat' },
   { id: 'employee-contact', label: 'تواصل مع HR', icon: MessageSquare, roles: ['employee'], section: 'employee', permKey: 'contact' },
   { id: 'employee-profile', label: 'ملفي الشخصي', icon: User, roles: ['employee'], section: 'employee', permKey: 'profile' },
+  { id: 'employee-attendance', label: 'حضوري', icon: Clock, roles: ['employee'], section: 'employee', permKey: 'attendance' },
+  { id: 'employee-leave-requests', label: 'طلب إجازة', icon: FileText, roles: ['employee'], section: 'employee', permKey: 'leave-requests' },
   // HR
   { id: 'hr-dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, roles: ['hr'], section: 'hr', permKey: 'dashboard' },
   { id: 'hr-movement-analysis', label: 'تحليل الحركة', icon: BarChart3, roles: ['hr'], section: 'hr', permKey: 'movement-analysis' },
@@ -38,10 +40,15 @@ const navItems: NavItem[] = [
   { id: 'hr-talent-market', label: 'سجل المؤهلات', icon: Award, roles: ['hr'], section: 'hr', permKey: 'talent-market' },
   { id: 'hr-communication', label: 'صندوق البريد', icon: MessageSquare, roles: ['hr'], section: 'hr', permKey: 'communication' },
   { id: 'hr-reports', label: 'التقارير', icon: FileBarChart, roles: ['hr'], section: 'hr', permKey: 'reports' },
+  { id: 'hr-attendance', label: 'سجلات الحضور', icon: Clock, roles: ['hr', 'admin'], section: 'hr', permKey: 'attendance' },
+  { id: 'hr-leave-requests', label: 'طلبات الإجازة', icon: FileText, roles: ['hr', 'admin'], section: 'hr', permKey: 'leave-requests' },
+  // Supervisor
+  { id: 'supervisor-breaks', label: 'توقيع خروج الموظفين', icon: ArrowRightLeft, roles: ['supervisor', 'manager'], section: 'supervisor', permKey: 'supervisor-breaks' },
+  { id: 'supervisor-leave-requests', label: 'إجازات فريقي', icon: FileText, roles: ['supervisor', 'manager'], section: 'supervisor', permKey: 'leave-requests' },
   // Gatekeeper
   { id: 'gatekeeper-portal', label: 'بوابة الحركة', icon: Users, roles: ['gatekeeper'], section: 'gatekeeper', permKey: 'gatekeeper-portal' },
   // Notifications for all
-  { id: 'notifications', label: 'التبليغات', icon: MessageSquare, roles: ['employee', 'hr', 'admin', 'gatekeeper', 'developer'], section: 'notifications', permKey: 'notifications' },
+  { id: 'notifications', label: 'التبليغات', icon: MessageSquare, roles: ['employee', 'hr', 'admin', 'gatekeeper', 'developer', 'supervisor', 'manager'], section: 'notifications', permKey: 'notifications' },
   // Admin
   { id: 'admin-dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, roles: ['admin'], section: 'admin', permKey: 'dashboard' },
   { id: 'admin-cms', label: 'إدارة صفحة الزوار', icon: Globe, roles: ['admin'], section: 'admin', permKey: 'cms' },
@@ -67,6 +74,8 @@ const roleLabels: Record<UserRole, string> = {
   admin: 'لوحة المشرف',
   gatekeeper: 'بوابة تسجيل الحركة',
   developer: 'بيئة التطوير المركزية',
+  supervisor: 'لوحة المشرف',
+  manager: 'لوحة المدير',
 };
 
 const roleColors: Record<UserRole, string> = {
@@ -75,6 +84,8 @@ const roleColors: Record<UserRole, string> = {
   admin: 'from-orange-500 to-red-500',
   gatekeeper: 'from-cyan-500 to-blue-600',
   developer: 'from-slate-800 to-black',
+  supervisor: 'from-blue-500 to-blue-700',
+  manager: 'from-amber-500 to-orange-600',
 };
 
 const roleBgs: Record<UserRole, string> = {
@@ -83,24 +94,41 @@ const roleBgs: Record<UserRole, string> = {
   admin: 'from-orange-50 to-red-50',
   gatekeeper: 'from-cyan-50 to-blue-50',
   developer: 'from-slate-100 to-slate-200',
+  supervisor: 'from-blue-50 to-blue-100',
+  manager: 'from-amber-50 to-orange-50',
 };
 
 // الصلاحيات الافتراضية لكل دور في حال لم يتم تحديد صلاحيات مخصصة للمستخدم
+// يجب أن تكون متطابقة مع ما في store/index.ts و AdminEmployeesPage.tsx
 const defaultPermissions: Record<UserRole, string[]> = {
-  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications'],
-  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications'],
+  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'attendance', 'leave-requests'],
+  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications', 'attendance'],
   gatekeeper: ['gatekeeper-portal', 'notifications'],
-  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'developer-db'],
-  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications'],
+  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
+  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard'],
+  supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
+  manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
 };
 
 export default function Sidebar() {
   const { user, logout } = useAuthStore();
+  const refreshUser = useAuthStore.getState().refreshUser;
   const { sidebarOpen, activeView, setActiveView, notifications, setSidebarOpen } = useUIStore();
   const [dynamicBadges, setDynamicBadges] = useState({ problems: 0, messages: 0 });
   const unreadCount = notifications.filter(n => !n.read).length;
 
   if (!user) return null;
+
+  // إعادة تحميل بيانات المستخدم بشكل دوري لضمان تحديث الصلاحيات
+  useEffect(() => {
+    // تحميل فوري عند بداية تحميل الـ Sidebar
+    refreshUser();
+    
+    const interval = setInterval(() => {
+      refreshUser();
+    }, 15000); // كل 15 ثانية (بدلاً من 30 للتجاوب الأسرع)
+    return () => clearInterval(interval);
+  }, [refreshUser]);
 
   useEffect(() => {
     if (user?.role !== 'hr') return;

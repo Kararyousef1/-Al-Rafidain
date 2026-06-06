@@ -1,4 +1,4 @@
-export type UserRole = 'employee' | 'hr' | 'admin' | 'gatekeeper' | 'developer';
+export type UserRole = 'employee' | 'hr' | 'admin' | 'gatekeeper' | 'developer' | 'supervisor' | 'manager';
 export type Rank = 'executive' | 'manager' | 'supervisor' | 'employee';
 export type ManufacturingDept = 'syrups' | 'tablets' | 'ointments' | 'powders' | 'management' | 'hr' | 'it';
 export type GatekeeperType = 'employee_movement' | 'visitor_movement' | 'both';
@@ -31,6 +31,7 @@ export interface User {
   cv_data?: any;
   created_at?: string;
   gatekeeper_type?: GatekeeperType; // لتحديد نوع حركة الحارس (موظفين، زوار، أو كلاهما)
+  gatekeeper_pin?: string; // الرمز السري للحارس (3 أرقام) للدخول إلى بوابة الحارس
   permissions?: string[]; // مصفوفة الصلاحيات الديناميكية للشريط الجانبي
 }
 

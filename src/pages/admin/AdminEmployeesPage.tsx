@@ -57,12 +57,12 @@ export default function AdminEmployeesPage() {
   ];
 
   const defaultPermissions: Record<string, string[]> = {
-    employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'ai-chat', 'contact', 'profile', 'sops', 'attendance', 'leave-requests'],
-    supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests'],
-    manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests'],
-    hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'profile', 'attendance'],
-    gatekeeper: ['gatekeeper-portal'],
-    admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'ai-config', 'profile', 'sops', 'notifications', 'gallery-video', 'attendance', 'leave-requests'],
+    employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'attendance', 'leave-requests'],
+    supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
+    manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
+    hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'profile', 'attendance', 'notifications'],
+    gatekeeper: ['gatekeeper-portal', 'notifications'],
+    admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
     developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard'],
   };
 
@@ -77,10 +77,25 @@ export default function AdminEmployeesPage() {
     gatekeeper_pin: '',
   });
 
+  // دالة لتحديد الرتبة الافتراضية حسب الدور
+  const getDefaultRank = (role: string): string => {
+    const rankMap: Record<string, string> = {
+      employee: 'employee',
+      supervisor: 'supervisor',
+      manager: 'manager',
+      hr: 'employee',
+      gatekeeper: 'employee',
+      developer: 'employee',
+      admin: 'executive',
+    };
+    return rankMap[role] || 'employee';
+  };
+
   const handleRoleChange = (newRole: string) => {
     setFormData(prev => ({
       ...prev,
       role: newRole,
+      rank: getDefaultRank(newRole),
       permissions: defaultPermissions[newRole] || ['dashboard', 'profile']
     }));
   };
@@ -340,12 +355,26 @@ export default function AdminEmployeesPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold mb-1">المرتبة (Rank)</label>
-                      <select value={formData.rank} onChange={e => setFormData({...formData, rank: e.target.value})} className="w-full border rounded-xl px-3 py-2 outline-none focus:border-indigo-500">
+                      <select 
+                        value={formData.rank} 
+                        onChange={e => setFormData({...formData, rank: e.target.value})} 
+                        className="w-full border rounded-xl px-3 py-2 outline-none focus:border-indigo-500"
+                        style={{ background: formData.role === 'admin' ? '#fef3c7' : formData.role === 'manager' ? '#dbeafe' : formData.role === 'supervisor' ? '#d1fae5' : 'white' }}
+                      >
                         <option value="employee">موظف</option>
                         <option value="supervisor">مشرف قسم</option>
                         <option value="manager">مدير قسم</option>
                         <option value="executive">مدير تنفيذي</option>
                       </select>
+                      {formData.role === 'admin' && formData.rank !== 'executive' && (
+                        <p className="text-xs text-amber-600 font-bold mt-1">⚠️ يجب أن تكون مرتبة مدير النظام "مدير تنفيذي"</p>
+                      )}
+                      {formData.role === 'manager' && formData.rank !== 'manager' && (
+                        <p className="text-xs text-blue-600 font-bold mt-1">⚠️ يجب أن تكون مرتبة مدير القسم "مدير قسم"</p>
+                      )}
+                      {formData.role === 'supervisor' && formData.rank !== 'supervisor' && (
+                        <p className="text-xs text-emerald-600 font-bold mt-1">⚠️ يجب أن تكون مرتبة المشرف "مشرف قسم"</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">الدور (Role)</label>
@@ -480,7 +509,7 @@ export default function AdminEmployeesPage() {
                 <button onClick={() => {
                   setFormData({
                     full_name: selectedEmp.full_name || '', email: selectedEmp.email?.split('@')[0] || '', passcode: '',
-                    role: selectedEmp.role || 'employee', rank: selectedEmp.rank || 'employee',
+                    role: selectedEmp.role || 'employee', rank: selectedEmp.rank || getDefaultRank(selectedEmp.role || 'employee'),
                     manufacturing_dept: selectedEmp.manufacturing_dept || 'syrups', department: selectedEmp.department || '',
                     position: selectedEmp.position || '', phone: selectedEmp.phone || '', location: selectedEmp.location || '',
                     profile_image: selectedEmp.profile_image || '', manager_id: selectedEmp.manager_id || '',
