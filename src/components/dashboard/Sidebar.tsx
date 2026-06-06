@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, FileText, MessageSquare, ClipboardList, Heart, Bot,
   User, Users, BarChart2, TrendingUp, Radio, FileBarChart, Settings,
-  ShieldCheck, Cpu, ChevronRight, LogOut, Bell, Building2, Star, Terminal, Database, AlertOctagon, BookOpen, BarChart3, Globe, Award, X, ArrowRightLeft, Clock, CheckCircle2
+  ShieldCheck, Cpu, ChevronRight, LogOut, Bell, Building2, Star, Terminal, Database, AlertOctagon, BookOpen, BarChart3, Globe, Award, X, ArrowRightLeft, Clock, CheckCircle2, Layers
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { UserRole } from '../../types';
@@ -66,6 +66,7 @@ const navItems: NavItem[] = [
   { id: 'developer-attendance', label: 'سجل الحضور والبصمة', icon: Clock, roles: ['developer', 'admin', 'hr'], section: 'developer', permKey: 'developer-attendance' },
   { id: 'developer-logs', label: 'مراقبة الأخطاء', icon: AlertOctagon, roles: ['developer'], section: 'developer', permKey: 'developer-logs' },
   { id: 'developer-db', label: 'إدارة قاعدة البيانات', icon: Database, roles: ['developer'], section: 'developer', permKey: 'developer-db' },
+  { id: 'developer-structure', label: 'هيكلية النظام', icon: Layers, roles: ['developer'], section: 'developer', permKey: 'developer-structure' },
 ];
 
 const roleLabels: Record<UserRole, string> = {

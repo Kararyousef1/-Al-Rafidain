@@ -8,6 +8,7 @@ import LandingPage from './pages/public/LandingPage';
 import DisclaimerPage from './pages/public/DisclaimerPage';
 import SystemGuide from './pages/public/SystemGuide';
 import NotificationsPage from './pages/public/NotificationsPage';
+import StructureManager from './pages/developer/StructureManager';
 
 const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard'));
 const ProblemsList      = lazy(() => import('./pages/employee/ProblemsList'));
@@ -117,6 +118,7 @@ function PageRenderer() {
       case 'admin-sops-reports': return <AdminSOPsReport />;
       case 'admin-ai-config': return <AIConfigPage />;
       case 'developer-dashboard': return <DeveloperDashboard />;
+      case 'developer-structure': return <StructureManager />;
       case 'supervisor-breaks': return <SupervisorBreaksPage />;
       default: return <DefaultPage role={user?.role} />;
     }
