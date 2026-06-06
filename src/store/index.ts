@@ -17,7 +17,7 @@ const defaultRolePermissions: Record<UserRole, string[]> = {
   hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications'],
   gatekeeper: ['gatekeeper-portal', 'notifications'],
   admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
-  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard'],
+  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard', 'developer-structure'],
   supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
   manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
 };
@@ -222,6 +222,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           },
           isAuthenticated: true,
         });
+        // إضافة إشعار ترحيب بعد كل تسجيل دخول
+        const { markNotificationRead } = useUIStore.getState();
+        const welcomeNotif = {
+          id: 'welcome-' + Date.now(),
+          title: 'مرحباً بك في الرافدين',
+          message: 'يمكنك الآن رفع مشاكلك وتتبعها بسهولة',
+          type: 'success' as const,
+          read: false,
+          createdAt: new Date().toISOString(),
+        };
+        useUIStore.setState((state) => ({
+          notifications: [welcomeNotif, ...state.notifications],
+        }));
+        setTimeout(() => useUIStore.getState().markNotificationRead(welcomeNotif.id), 6000);
         setupRealtimeProfileSubscription(data.user.id, set);
       }
       return true;
