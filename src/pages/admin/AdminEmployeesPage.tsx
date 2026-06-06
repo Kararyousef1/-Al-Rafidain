@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
 
-import { Search, Plus, Mail, Phone, MapPin, Briefcase, Star, Trash2, Edit2, Loader, ServerCrash, X, Camera, User as UserIcon, Eye, Key, ShieldCheck, CheckCircle2, LayoutDashboard, Heart, Bot, GraduationCap, ClipboardList, MessageSquare, FileText, Database, RefreshCw } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Briefcase, Star, Trash2, Edit2, Loader, ServerCrash, X, Camera, User as UserIcon, Eye, Key, ShieldCheck, CheckCircle2, LayoutDashboard, Heart, Bot, GraduationCap, ClipboardList, MessageSquare, FileText, Database, RefreshCw, Send } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import { GatekeeperType } from '../../types';
@@ -50,6 +50,7 @@ export default function AdminEmployeesPage() {
     { id: 'permissions', label: 'شجرة الصلاحيات', icon: ShieldCheck, category: 'الإدارة' },
     { id: 'gatekeeper-permissions', label: 'صلاحيات المدراء', icon: ShieldCheck, category: 'الإدارة' },
     { id: 'notifications', label: 'التبليغات', icon: MessageSquare, category: 'الإدارة' },
+    { id: 'publish-announcements', label: 'نشر التبليغات', icon: Send, category: 'الإدارة' },
     { id: 'gallery-video', label: 'رفع فيديو المعرض', icon: Star, category: 'الإدارة' },
     { id: 'audit-log', label: 'سجل العمليات', icon: ShieldCheck, category: 'الإدارة' },
     { id: 'ai-config', label: 'إعداد الذكاء الاصطناعي', icon: Bot, category: 'الإدارة' },
@@ -63,7 +64,7 @@ export default function AdminEmployeesPage() {
     hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'profile', 'attendance', 'notifications'],
     gatekeeper: ['gatekeeper-portal', 'notifications'],
     admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
-    developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard'],
+    developer: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db', 'developer-dashboard', 'developer-attendance', 'developer-logs', 'publish-announcements'],
   };
 
   const [formData, setFormData] = useState({
