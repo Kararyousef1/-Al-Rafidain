@@ -24,6 +24,7 @@ import {
   PermissionKey
 } from '../../constants/permissions';
 import { getUserDisplayName } from '../../utils/userUtils';
+import { getUserNotifications } from '../../lib/notificationManager';
 import { useEffect } from 'react';
 
 // ════════════════════════════════════════════════════════════════
@@ -647,10 +648,12 @@ const ROLE_CONFIG: Record<UserRole, {
 export default function Sidebar() {
   const { user, logout } = useAuthStore();
   const refreshUser = useAuthStore.getState().refreshUser;
-  const { sidebarOpen, activeView, setActiveView, notifications, setSidebarOpen } = useUIStore();
+  const { sidebarOpen, activeView, setActiveView, setSidebarOpen } = useUIStore();
   const [dynamicBadges, setDynamicBadges] = useState({ problems: 0, messages: 0 });
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // ✅ استخدام getUserNotifications من localStorage (الذي يحتوي على دمج محلي + سيرفر)
+  const cachedNotifications = getUserNotifications(user?.id);
+  const unreadCount = cachedNotifications.filter(n => !n.read).length;
 
   if (!user) return null;
 

@@ -1,187 +1,238 @@
 /**
- * Edge Function: إنشاء مستخدم جديد
- * 
- * هذه الدالة تحل محل استخدام Service Key في الكود الأمامي
- * تعمل كـ Proxy آمن بين التطبيق و Supabase Admin API
- * 
- * لنشرها:
- * 1. تأكد من تثبيت supabase CLI
- * 2. قم بتشغيل: supabase functions deploy admin-create-user
- * 3. قم بتعيين secret: SUPABASE_SERVICE_KEY
+ * ════════════════════════════════════════════════════════════════
+ *  Edge Function: admin-create-user
+ *  نظام الرافدين HR — Deno Runtime (Supabase Edge)
+ *
+ *  🔒 هذا هو البديل الآمن لـ supabaseAdmin.auth.admin.createUser()
+ *  - Service Role Key يبقى في بيئة Deno الآمنة فقط
+ *  - لا يُعرَض للمتصفح أبداً
+ *  - التحقق من صلاحية المستدعي (admin فقط)
+ * ════════════════════════════════════════════════════════════════
  */
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-const serviceKey = Deno.env.get('SUPABASE_SERVICE_KEY') || ''
+// ── CORS Headers ────────────────────────────────────────────────
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
-const supabase = createClient(supabaseUrl, serviceKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
-
+// ── الأنواع ─────────────────────────────────────────────────────
 interface CreateUserPayload {
-  email: string
-  password: string
-  fullName: string
-  role: string
-  department?: string
-  position?: string
-  phone?: string
+  email: string;
+  password: string;
+  full_name: string;
+  role: 'employee' | 'supervisor' | 'manager' | 'hr' | 'gatekeeper' | 'admin';
+  department_id?: string;
+  employee_number?: string;
+  phone?: string;
+  position?: string;
 }
 
-interface UpdateUserPayload {
-  userId: string
-  email?: string
-  fullName?: string
-  role?: string
-  department?: string
-  position?: string
-  phone?: string
-  status?: string
-}
+// ── الأدوار المسموح لها باستدعاء هذه الـ Function ──────────────
+const ALLOWED_ROLES = ['admin', 'developer'] as const;
 
-interface DeleteUserPayload {
-  userId: string
-}
-
+// ════════════════════════════════════════════════════════════════
 serve(async (req) => {
-  // CORS headers
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Content-Type': 'application/json',
+  // OPTIONS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
   }
 
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers })
+  if (req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed' }),
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      throw new Error('Missing authorization header')
+    // ══ 1. استخراج JWT من الـ Authorization header ══
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'مطلوب توكن المصادقة' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    // Verify the user is authenticated
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    
-    if (authError || !user) {
-      throw new Error('Unauthorized')
+    const callerJwt = authHeader.replace('Bearer ', '');
+
+    // ══ 2. إنشاء عميل Supabase للتحقق من المستدعي (Anon Key) ══
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${callerJwt}` } },
+    });
+
+    // ══ 3. التحقق من هوية المستدعي ══
+    const { data: { user: callerUser }, error: authError } = await callerClient.auth.getUser();
+
+    if (authError || !callerUser) {
+      return new Response(
+        JSON.stringify({ error: 'جلسة غير صالحة' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    // Check if user is admin or developer
-    const { data: profile } = await supabase
+    // ══ 4. التحقق من صلاحية المستدعي (admin/developer فقط) ══
+    const { data: callerProfile, error: profileError } = await callerClient
       .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
+      .select('role, full_name')
+      .eq('id', callerUser.id)
+      .single();
 
-    if (!profile || !['admin', 'developer'].includes(profile.role)) {
-      throw new Error('Insufficient permissions. Only admins and developers can manage users.')
+    if (profileError || !callerProfile) {
+      return new Response(
+        JSON.stringify({ error: 'ملف المستخدم غير موجود' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    const body = await req.json()
-    const { action } = body
-
-    let result
-
-    switch (action) {
-      case 'create': {
-        const payload = body.data as CreateUserPayload
-        const nameParts = payload.fullName.trim().split(' ')
-        const firstName = nameParts[0] || payload.fullName
-        const lastName = nameParts.slice(1).join(' ') || ''
-
-        // Create user in auth.users
-        const { data: createdUser, error: createError } = await supabase.auth.admin.createUser({
-          email: payload.email,
-          password: payload.password,
-          email_confirm: true,
-          user_metadata: {
-            full_name: payload.fullName,
-            first_name: firstName,
-            last_name: lastName,
-            role: payload.role,
-          },
-        })
-
-        if (createError) throw createError
-
-        result = { success: true, data: createdUser }
-        break
-      }
-
-      case 'update': {
-        const payload = body.data as UpdateUserPayload
-        
-        // Update auth metadata
-        if (payload.fullName || payload.role) {
-          const metadata: Record<string, string> = {}
-          if (payload.fullName) {
-            const nameParts = payload.fullName.trim().split(' ')
-            metadata.full_name = payload.fullName
-            metadata.first_name = nameParts[0] || payload.fullName
-            metadata.last_name = nameParts.slice(1).join(' ') || ''
-          }
-          if (payload.role) metadata.role = payload.role
-          
-          await supabase.auth.admin.updateUserById(payload.userId, {
-            user_metadata: metadata,
-          })
-        }
-
-        // Update profile
-        const profileUpdate: Record<string, any> = {}
-        if (payload.fullName) profileUpdate.full_name = payload.fullName
-        if (payload.role) profileUpdate.role = payload.role
-        if (payload.department) profileUpdate.department = payload.department
-        if (payload.position) profileUpdate.position = payload.position
-        if (payload.phone) profileUpdate.phone = payload.phone
-        if (payload.status) profileUpdate.status = payload.status
-
-        if (Object.keys(profileUpdate).length > 0) {
-          await supabase.from('profiles').update(profileUpdate).eq('id', payload.userId)
-        }
-
-        result = { success: true }
-        break
-      }
-
-      case 'delete': {
-        const payload = body.data as DeleteUserPayload
-        
-        // Delete related records first
-        await supabase.from('employee_skills').delete().eq('employee_id', payload.userId).maybeSingle()
-        await supabase.from('employee_certifications').delete().eq('employee_id', payload.userId).maybeSingle()
-        await supabase.from('employees').delete().eq('user_id', payload.userId).maybeSingle()
-        await supabase.from('profiles').delete().eq('id', payload.userId).maybeSingle()
-        
-        // Delete auth user
-        await supabase.auth.admin.deleteUser(payload.userId)
-        
-        result = { success: true }
-        break
-      }
-
-      case 'list': {
-        const { data: users, error: listError } = await supabase.auth.admin.listUsers()
-        if (listError) throw listError
-        result = { success: true, data: users }
-        break
-      }
-
-      default:
-        throw new Error(`Unknown action: ${action}`)
+    if (!ALLOWED_ROLES.includes(callerProfile.role as any)) {
+      console.warn(`🚫 Unauthorized access attempt by ${callerUser.id} (role: ${callerProfile.role})`);
+      return new Response(
+        JSON.stringify({ error: 'غير مخوَّل. يتطلب صلاحية admin أو developer.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    return new Response(JSON.stringify(result), { headers, status: 200 })
-  } catch (error: any) {
+    // ══ 5. استخراج البيانات ══
+    const payload: CreateUserPayload = await req.json();
+
+    const { email, password, full_name, role, department_id, employee_number, phone, position } = payload;
+
+    // التحقق من البيانات الإلزامية
+    if (!email || !password || !full_name || !role) {
+      return new Response(
+        JSON.stringify({ error: 'البيانات الإلزامية ناقصة: email, password, full_name, role' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (password.length < 8) {
+      return new Response(
+        JSON.stringify({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ══ 6. إنشاء المستخدم بـ Service Role Key (آمن — في Deno فقط) ══
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // تأكيد تلقائي
+      user_metadata: { full_name, role },
+    });
+
+    if (createError) {
+      console.error('Create user error:', createError.message);
+      
+      if (createError.message.includes('already registered') || createError.message.includes('already been registered')) {
+        return new Response(
+          JSON.stringify({ error: `البريد الإلكتروني ${email} مسجَّل مسبقاً` }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      
+      return new Response(
+        JSON.stringify({ error: createError.message }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (!newUser.user) {
+      return new Response(
+        JSON.stringify({ error: 'فشل إنشاء المستخدم' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ══ 7. إنشاء ملف الموظف في جدول profiles ══
+    const { error: profileInsertError } = await adminClient
+      .from('profiles')
+      .upsert({
+        id: newUser.user.id,
+        email,
+        full_name,
+        role,
+        department_id: department_id || null,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (profileInsertError) {
+      console.warn('Profile insert warning:', profileInsertError.message);
+      // لا نُلغي العملية — المستخدم أُنشئ بنجاح في auth.users
+    }
+
+    // ══ 8. إنشاء سجل في جدول employees (اختياري) ══
+    if (employee_number || phone || position || department_id) {
+      const { error: empError } = await adminClient
+        .from('employees')
+        .upsert({
+          user_id: newUser.user.id,
+          email,
+          full_name_ar: full_name,
+          role,
+          department_id: department_id || null,
+          employee_number: employee_number || null,
+          phone: phone || null,
+          position: position || null,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (empError) {
+        console.warn('Employee insert warning:', empError.message);
+      }
+    }
+
+    // ══ 9. تسجيل في security_events ══
+    await adminClient
+      .from('security_events')
+      .insert({
+        event_type: 'admin_create_user',
+        actor_id: callerUser.id,
+        target_id: newUser.user.id,
+        description: `أنشأ ${callerProfile.full_name} مستخدماً جديداً: ${email} (${role})`,
+        metadata: { email, role, department_id },
+        created_at: new Date().toISOString(),
+      })
+      .then(() => {}); // non-blocking
+
+    console.log(`✅ User created: ${email} by ${callerUser.id}`);
+
+    // ══ 10. الإرجاع الناجح ══
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { headers, status: 400 }
-    )
+      JSON.stringify({
+        success: true,
+        user_id: newUser.user.id,
+        email,
+        message: `تم إنشاء المستخدم ${full_name} بنجاح`,
+      }),
+      {
+        status: 201,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
+
+  } catch (error: any) {
+    console.error('Unexpected error:', error);
+    return new Response(
+      JSON.stringify({ error: 'خطأ داخلي في الخادم', details: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
-})
+});
