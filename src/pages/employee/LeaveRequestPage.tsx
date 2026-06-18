@@ -1,172 +1,659 @@
-import { useState, useEffect } from 'react';
-import { Calendar, FileText, Send, Clock, CheckCircle, XCircle, Loader, User, Building2 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  Calendar, FileText, Send, Clock, Loader,
+  Search, CheckCheck, X as XIcon, AlertTriangle
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore, useUIStore } from '../../store';
+import { notifyUser, notifyRole } from '../../lib/notificationService';
+import { addNotification } from '../../lib/notificationManager';
+import {
+  linkLeaveApproval,
+  linkLeaveRejection,
+  linkPermissionApproval,
+  notifyEmployeeLeaveApproved,
+  notifyEmployeeLeaveRejected,
+  notifyEmployeePermissionApproved,
+} from '../../lib/leaveAttendanceLink';
+import {
+  LeaveType, LeaveBalance,
+  DEFAULT_LEAVE_SETTINGS, calculateWorkingDays,
+  getLeaveTypeLabel, getLeaveTypeColor,
+  checkHajjEligibility, getDefaultLeaveRange
+} from '../../utils/leaveUtils';
+import {
+  PermissionType, PERMISSION_TYPE_COLORS, AttendanceStatus
+} from '../../utils/shiftUtils';
+
+type ViewMode = 'employee' | 'hr' | 'supervisor' | 'manager';
+
+interface PermissionRequest {
+  id: string;
+  employee_id: string;
+  employee_name?: string;
+  employee_department?: string;
+  date: string;
+  permission_type: PermissionType;
+  expected_out_time: string;
+  expected_return_time?: string;
+  status: 'انتظار' | 'موافق' | 'مرفوض';
+  reason: string;
+  created_at: string;
+  rejection_reason?: string;
+}
 
 export default function LeaveRequestPage() {
   const { user } = useAuthStore();
-  const { addToast } = useUIStore();
+  const { addToast, activeView } = useUIStore();
+
+  const viewMode: ViewMode = useMemo(() => {
+    if (activeView === 'hr-leave-requests') return 'hr';
+    if (activeView === 'supervisor-leave-requests') return 'supervisor';
+    if (activeView === 'manager-leave-requests') return 'manager';
+    return 'employee';
+  }, [activeView]);
+
+  const [activeTab, setActiveTab] = useState<string>(() => viewMode !== 'employee' ? 'permissions' : 'leaves');
+  const canApprove = viewMode === 'hr' || viewMode === 'supervisor' || viewMode === 'manager';
+  const canSubmit = viewMode === 'employee';
+
+  // Leave state
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [calculatedDays, setCalculatedDays] = useState(0);
+  const [balance, setBalance] = useState<LeaveBalance | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'انتظار' | 'موافق' | 'مرفوض'>('all');
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [realEmployeeId, setRealEmployeeId] = useState<string>('');
+
   const [formData, setFormData] = useState({
-    leave_type: 'سنوية',
-    start_date: '',
-    end_date: '',
+    leave_type: 'سنوية' as LeaveType,
+    start_date: getDefaultLeaveRange(7).from,
+    end_date: getDefaultLeaveRange(7).to,
+    reason: '',
+    attachment_url: '',
+  });
+
+  // Permissions state
+  const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
+  const [permLoading, setPermLoading] = useState(true);
+  const [permShowForm, setPermShowForm] = useState(false);
+  const [permSubmitting, setPermSubmitting] = useState(false);
+  const [permSearchQuery, setPermSearchQuery] = useState('');
+  const [permStatusFilter, setPermStatusFilter] = useState<'all' | 'انتظار' | 'موافق' | 'مرفوض'>('all');
+  const [permRejectingId, setPermRejectingId] = useState<string | null>(null);
+  const [permRejectionReason, setPermRejectionReason] = useState('');
+  const [permProcessingId, setPermProcessingId] = useState<string | null>(null);
+  const [permFormData, setPermFormData] = useState({
+    permission_type: 'عادية' as PermissionType,
+    date: new Date().toISOString().split('T')[0],
+    expected_out_time: '10:00',
+    expected_return_time: '12:00',
     reason: '',
   });
-  const [submitting, setSubmitting] = useState(false);
 
+  // Get real employee ID
   useEffect(() => {
-    if (!user) return;
-    fetchRequests();
+    if (!user?.id) return;
+    supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setRealEmployeeId(data.id);
+          supabase.from('leave_balance').select('*').eq('employee_id', data.id).eq('year', new Date().getFullYear()).maybeSingle()
+            .then(({ data: bd }) => { if (bd) setBalance(bd as unknown as LeaveBalance); });
+        }
+      });
   }, [user]);
+
+  useEffect(() => { if (!user) return; fetchRequests(); fetchPermissions(); }, [user, realEmployeeId]);
+  
+  useEffect(() => {
+    if (formData.start_date && formData.end_date) {
+      setCalculatedDays(calculateWorkingDays(formData.start_date, formData.end_date));
+    }
+  }, [formData.start_date, formData.end_date]);
 
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from('leave_requests')
-        .select('*')
-        .eq('employee_id', user?.id)
-        .order('created_at', { ascending: false });
-      if (data) setRequests(data);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+      let query = supabase.from('leaves').select('*');
+      if (!canApprove && realEmployeeId) query = query.eq('employee_id', realEmployeeId);
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      setRequests(data || []);
+    } catch (err: any) {
+      if (!err.message?.includes('does not exist')) addToast('فشل تحميل الطلبات', 'error');
+    } finally { setLoading(false); }
   };
+
+  const fetchPermissions = async () => {
+    setPermLoading(true);
+    try {
+      const { data, error } = await supabase.from('permissions_request').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      setPermissions(data || []);
+    } catch (_) { /* table may not exist */ }
+    finally { setPermLoading(false); }
+  };
+
+  const hajjCheck = checkHajjEligibility(balance);
+  const selectedSetting = DEFAULT_LEAVE_SETTINGS.find(s => s.leaveType === formData.leave_type);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !formData.start_date || !formData.end_date) return;
+    if (formData.leave_type === 'حج' && !hajjCheck.eligible) { addToast(hajjCheck.message, 'error'); return; }
+    if (calculatedDays === 0) { addToast('لا توجد أيام عمل فعلية', 'error'); return; }
     setSubmitting(true);
     try {
-      // حساب عدد الأيام
-      const start = new Date(formData.start_date);
-      const end = new Date(formData.end_date);
-      const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1);
-
-      // إيجاد المشرف المباشر للموظف
-      const managerId = (user as any).manager_id || (user as any).manager || user.id;
-
-      const { data: managerProfile } = await supabase
-        .from('profiles')
-        .select('id, full_name, position, department, manufacturing_dept')
-        .eq('id', managerId)
-        .maybeSingle();
-
-      const { error } = await supabase.from('leave_requests').insert({
-        employee_id: user.id,
-        employee_name: user.full_name,
-        employee_position: user.position,
-        employee_department: user.department || (user as any).manufacturingDept || '',
+      let targetId = realEmployeeId;
+      if (!targetId) {
+        const { data: emp } = await supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle();
+        if (emp) targetId = emp.id;
+      }
+      
+      const { error } = await supabase.from('leaves').insert({
+        employee_id: targetId || user.id,
         leave_type: formData.leave_type,
-        start_date: formData.start_date,
-        end_date: formData.end_date,
-        days_count: days,
+        date_from: formData.start_date,
+        date_to: formData.end_date,
+        working_days_count: calculatedDays,
         reason: formData.reason,
-        status: 'pending',
-        supervisor_id: (user as any).manager_id || null,
-        supervisor_name: managerProfile?.full_name || 'المدير المباشر',
+        status: 'انتظار',
+        approved_by: null,
       });
+      if (error) throw error;
+      addToast('✅ تم إرسال طلب الإجازة', 'success');
+      setShowForm(false);
+      fetchRequests();
+    } catch (err: any) { addToast('❌ ' + err.message, 'error'); }
+    finally { setSubmitting(false); }
+  };
 
+  const handleApprove = async (id: string) => {
+    setProcessingId(id);
+    try {
+      // قراءة بيانات الطلب قبل التحديث
+      const { data: leaveData } = await supabase
+        .from('leaves')
+        .select('id, employee_id, leave_type, date_from, date_to, reason, employee_name')
+        .eq('id', id)
+        .single();
+
+      const { error } = await supabase.from('leaves')
+        .update({ status: 'موافق', approved_by: realEmployeeId || null })
+        .eq('id', id);
       if (error) throw error;
 
-      addToast('✅ تم إرسال طلب الإجازة بنجاح، بإنتظار موافقة المشرف', 'success');
-      setShowForm(false);
-      setFormData({ leave_type: 'سنوية', start_date: '', end_date: '', reason: '' });
+      // ربط الإجازة بالحضور ← تحديث attendance_summary
+      if (leaveData) {
+        const linkResult = await linkLeaveApproval(
+          leaveData.employee_id,
+          leaveData.date_from,
+          leaveData.date_to,
+          leaveData.leave_type,
+        );
+
+        // إشعار للموظف
+        await notifyEmployeeLeaveApproved(
+          leaveData.employee_id,
+          leaveData.leave_type,
+          leaveData.date_from,
+          leaveData.date_to,
+        );
+
+        addToast(`✅ تمت الموافقة وتحديث ${linkResult.daysUpdated} يوم في سجل الحضور`, 'success');
+      } else {
+        addToast('✅ تمت الموافقة', 'success');
+      }
       fetchRequests();
-    } catch (err: any) {
-      addToast('❌ فشل إرسال الطلب: ' + err.message, 'error');
-    } finally { setSubmitting(false); }
+    } catch (err: any) { addToast('❌ ' + err.message, 'error'); }
+    finally { setProcessingId(null); }
   };
+
+  const handleReject = async () => {
+    if (!rejectingId || !rejectionReason.trim()) { addToast('يرجى إدخال سبب الرفض', 'warning'); return; }
+    setProcessingId(rejectingId);
+    try {
+      // قراءة بيانات الطلب قبل التحديث
+      const { data: leaveData } = await supabase
+        .from('leaves')
+        .select('id, employee_id, leave_type, date_from, date_to, status')
+        .eq('id', rejectingId)
+        .single();
+
+      const { error } = await supabase.from('leaves')
+        .update({ status: 'مرفوض', rejection_reason: rejectionReason })
+        .eq('id', rejectingId);
+      if (error) throw error;
+
+      // ربط الرفض بالحضور ← إعادة حساب الأيام
+      if (leaveData && leaveData.status === 'موافق') {
+        // فقط إذا كان قد تمت الموافقة مسبقاً ثم ألغيت
+        await linkLeaveRejection(
+          leaveData.employee_id,
+          leaveData.date_from,
+          leaveData.date_to,
+        );
+      }
+
+      addToast('✅ تم الرفض', 'success');
+      setRejectingId(null); setRejectionReason('');
+      fetchRequests();
+    } catch (err: any) { addToast('❌ ' + err.message, 'error'); }
+    finally { setProcessingId(null); }
+  };
+
+  // Permissions handlers
+  const handlePermSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !permFormData.date) return;
+    setPermSubmitting(true);
+    try {
+      let targetId = realEmployeeId;
+      if (!targetId) {
+        const { data: emp } = await supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle();
+        if (emp) targetId = emp.id;
+      }
+      const { error } = await supabase.from('permissions_request').insert({
+        employee_id: targetId || user.id,
+        employee_name: user.full_name || 'موظف',
+        employee_department: user.department || null,
+        date: permFormData.date,
+        permission_type: permFormData.permission_type,
+        expected_out_time: permFormData.expected_out_time,
+        expected_return_time: permFormData.permission_type === 'مغادرة' ? null : permFormData.expected_return_time,
+        reason: permFormData.reason,
+        status: 'انتظار',
+      });
+      if (error) throw error;
+      addToast('✅ تم إرسال طلب الزمنية', 'success');
+      setPermShowForm(false);
+      fetchPermissions();
+    } catch (err: any) { addToast('❌ ' + (err.message || ''), 'error'); }
+    finally { setPermSubmitting(false); }
+  };
+
+  const handlePermApprove = async (id: string) => {
+    setPermProcessingId(id);
+    try {
+      // قراءة بيانات الزمنية قبل التحديث
+      const { data: permData } = await supabase
+        .from('permissions_request')
+        .select('id, employee_id, date, expected_out_time, expected_return_time')
+        .eq('id', id)
+        .single();
+
+      const { error } = await supabase.from('permissions_request')
+        .update({ status: 'موافق', approved_by: realEmployeeId }).eq('id', id);
+      if (error) throw error;
+
+      // ربط الزمنية بالحضور ← تحديث attendance_summary
+      if (permData) {
+        await linkPermissionApproval(
+          permData.employee_id,
+          permData.date,
+          permData.expected_out_time,
+          permData.expected_return_time,
+        );
+
+        // إشعار للموظف
+        await notifyEmployeePermissionApproved(
+          permData.employee_id,
+          permData.date,
+        );
+      }
+
+      addToast('✅ تمت الموافقة وتحديث سجل الحضور', 'success');
+      fetchPermissions();
+    } catch (err: any) { addToast('❌ ' + (err.message || ''), 'error'); }
+    finally { setPermProcessingId(null); }
+  };
+
+  const handlePermReject = async () => {
+    if (!permRejectingId || !permRejectionReason.trim()) { addToast('يرجى إدخال سبب الرفض', 'warning'); return; }
+    setPermProcessingId(permRejectingId);
+    try {
+      const { error } = await supabase.from('permissions_request')
+        .update({ status: 'مرفوض', rejection_reason: permRejectionReason }).eq('id', permRejectingId);
+      if (error) throw error;
+      addToast('✅ تم الرفض', 'success');
+      setPermRejectingId(null); setPermRejectionReason('');
+      fetchPermissions();
+    } catch (err: any) { addToast('❌ ' + (err.message || ''), 'error'); }
+    finally { setPermProcessingId(null); }
+  };
+
+  const stats = useMemo(() => ({
+    total: requests.length,
+    pending: requests.filter(r => r.status === 'انتظار').length,
+    approved: requests.filter(r => r.status === 'موافق').length,
+    rejected: requests.filter(r => r.status === 'مرفوض').length,
+  }), [requests]);
+
+  const permStats = useMemo(() => ({
+    total: permissions.length,
+    pending: permissions.filter(r => r.status === 'انتظار').length,
+    approved: permissions.filter(r => r.status === 'موافق').length,
+    rejected: permissions.filter(r => r.status === 'مرفوض').length,
+  }), [permissions]);
+
+  const filteredRequests = useMemo(() => requests.filter(req => {
+    if (statusFilter !== 'all' && req.status !== statusFilter) return false;
+    if (leaveTypeFilter !== 'all' && req.leave_type !== leaveTypeFilter) return false;
+    if (searchQuery.trim() && !(req.employee_name || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  }), [requests, statusFilter, leaveTypeFilter, searchQuery]);
+
+  const filteredPermissions = useMemo(() => permissions.filter(perm => {
+    if (permStatusFilter !== 'all' && perm.status !== permStatusFilter) return false;
+    if (permSearchQuery.trim() && !(perm.employee_name || '').toLowerCase().includes(permSearchQuery.toLowerCase())) return false;
+    return true;
+  }), [permissions, permStatusFilter, permSearchQuery]);
+
+  const pageGradient = useMemo(() => ({
+    employee: 'from-emerald-600 to-teal-700',
+    supervisor: 'from-blue-600 to-indigo-700',
+    manager: 'from-amber-600 to-orange-700',
+    hr: 'from-purple-600 to-pink-700',
+  }[viewMode]), [viewMode]);
 
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
-      pending: 'bg-amber-100 text-amber-700',
-      approved: 'bg-emerald-100 text-emerald-700',
-      rejected: 'bg-red-100 text-red-700',
+      انتظار: 'bg-amber-100 text-amber-700',
+      موافق: 'bg-emerald-100 text-emerald-700',
+      مرفوض: 'bg-red-100 text-red-700',
     };
     const label: Record<string, string> = {
-      pending: 'قيد المراجعة',
-      approved: 'تمت الموافقة',
-      rejected: 'مرفوض',
+      انتظار: 'قيد المراجعة', موافق: 'تمت الموافقة', مرفوض: 'مرفوض',
     };
     return <span className={`px-3 py-1 rounded-full text-xs font-bold ${map[status] || 'bg-slate-100 text-slate-600'}`}>{label[status] || status}</span>;
   };
 
   return (
     <div className="space-y-6 animate-fade-in" dir="rtl">
-      <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-6 text-white flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-extrabold flex items-center gap-2"><Calendar size={24} /> طلب إجازة</h2>
-          <p className="text-white/70 mt-1">تقديم طلبات الإجازة السنوية والمرضية</p>
-        </div>
-        <button onClick={() => setShowForm(!showForm)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-bold text-sm transition-colors">
-          {showForm ? 'إلغاء' : '+ طلب جديد'}
+      {/* Tabs */}
+      <div className="flex gap-2 bg-slate-50 border border-slate-100 rounded-2xl p-1.5 overflow-x-auto">
+        <button onClick={() => setActiveTab('leaves')}
+          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'leaves' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}>
+          <Calendar size={16} /> الإجازات
+        </button>
+        <button onClick={() => setActiveTab('permissions')}
+          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'permissions' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}>
+          <Clock size={16} /> الزمنيات
         </button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 border border-slate-100 space-y-4">
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-bold mb-1">نوع الإجازة</label>
-              <select value={formData.leave_type} onChange={e => setFormData({...formData, leave_type: e.target.value})} className="w-full border rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500">
-                <option value="سنوية">إجازة سنوية</option>
-                <option value="مرضية">إجازة مرضية</option>
-                <option value="طارئة">إجازة طارئة</option>
-                <option value="زمنية">إجازة زمنية</option>
+      {/* Leaves Tab */}
+      {activeTab === 'leaves' && (
+        <>
+          <div className={`bg-gradient-to-br ${pageGradient} rounded-2xl p-6 text-white`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-extrabold"><Calendar size={24} className="inline ml-2" />طلبات الإجازات</h2>
+                <p className="text-white/70 mt-1">جميع أنواع الإجازات مع حساب ذكي للمدة</p>
+              </div>
+              {canSubmit && (
+                <button onClick={() => setShowForm(!showForm)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-bold text-sm">
+                  {showForm ? 'إلغاء' : '+ طلب إجازة'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {canApprove && (
+            <div className="grid grid-cols-4 gap-3">
+              {[ 
+                { label: 'الإجمالي', value: stats.total, color: 'bg-white text-slate-800' },
+                { label: 'قيد المراجعة', value: stats.pending, color: 'bg-amber-50 text-amber-700' },
+                { label: 'تمت الموافقة', value: stats.approved, color: 'bg-emerald-50 text-emerald-700' },
+                { label: 'مرفوض', value: stats.rejected, color: 'bg-red-50 text-red-700' },
+              ].map((s, i) => (
+                <div key={i} className={`rounded-2xl p-4 border ${s.color}`}>
+                  <div className="text-xs font-bold mb-1">{s.label}</div>
+                  <div className="text-2xl font-extrabold">{s.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {canSubmit && showForm && (
+            <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 border space-y-4">
+              <h3 className="text-lg font-extrabold">نموذج طلب إجازة</h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-1">نوع الإجازة</label>
+                  <select value={formData.leave_type} onChange={e => setFormData({ ...formData, leave_type: e.target.value as LeaveType })}
+                    className="w-full border rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500">
+                    {DEFAULT_LEAVE_SETTINGS.map(s => <option key={s.leaveType} value={s.leaveType}>{getLeaveTypeLabel(s.leaveType)}</option>)}
+                  </select>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-indigo-600">{calculatedDays}</div>
+                    <div className="text-xs text-gray-600">يوم عمل فعلي</div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">من</label>
+                  <input type="date" value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })} className="w-full border rounded-xl px-3 py-2.5" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">إلى</label>
+                  <input type="date" value={formData.end_date} onChange={e => setFormData({ ...formData, end_date: e.target.value })} className="w-full border rounded-xl px-3 py-2.5" required />
+                </div>
+              </div>
+              {formData.leave_type === 'حج' && !hajjCheck.eligible && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700"><AlertTriangle className="inline ml-1" />{hajjCheck.message}</div>
+              )}
+              <textarea value={formData.reason} onChange={e => setFormData({ ...formData, reason: e.target.value })} rows={3} className="w-full border rounded-xl px-3 py-2.5" placeholder="سبب الإجازة..." required />
+              <button type="submit" disabled={submitting} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50">
+                {submitting ? 'جاري...' : <><Send size={16} className="inline ml-1" />إرسال</>}
+              </button>
+            </form>
+          )}
+
+          {canApprove && (
+            <div className="bg-white rounded-2xl p-4 border flex gap-3">
+              <input type="text" placeholder="بحث..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="flex-1 border rounded-xl px-3 py-2.5" />
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="border rounded-xl px-3 py-2.5">
+                <option value="all">جميع الحالات</option>
+                <option value="انتظار">قيد المراجعة</option>
+                <option value="موافق">موافق</option>
+                <option value="مرفوض">مرفوض</option>
+              </select>
+              <select value={leaveTypeFilter} onChange={e => setLeaveTypeFilter(e.target.value)} className="border rounded-xl px-3 py-2.5">
+                <option value="all">جميع الأنواع</option>
+                {DEFAULT_LEAVE_SETTINGS.map(s => <option key={s.leaveType} value={s.leaveType}>{getLeaveTypeLabel(s.leaveType)}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-bold mb-1">تاريخ البداية</label>
-              <input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full border rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500" required />
-            </div>
-            <div>
-              <label className="block text-sm font-bold mb-1">تاريخ النهاية</label>
-              <input type="date" value={formData.end_date} onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full border rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500" required />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-bold mb-1">سبب الإجازة</label>
-            <textarea value={formData.reason} onChange={e => setFormData({...formData, reason: e.target.value})} rows={3} className="w-full border rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500" placeholder="اذكر سبب طلب الإجازة..." required />
-          </div>
-          <button type="submit" disabled={submitting} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2">
-            {submitting ? 'جاري الإرسال...' : <><Send size={16} /> إرسال الطلب</>}
-          </button>
-        </form>
-      )}
+          )}
 
-      {loading ? (
-        <div className="flex justify-center py-20"><Loader className="animate-spin" size={24} /></div>
-      ) : requests.length === 0 ? (
-        <div className="text-center py-20 text-slate-400">
-          <FileText size={48} className="mx-auto mb-4 opacity-40" />
-          <p>لا توجد طلبات إجازة سابقة</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {requests.map(req => (
-            <div key={req.id} className="bg-white rounded-2xl p-5 border border-slate-100">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-bold text-slate-800">{req.leave_type}</span>
-                    {statusBadge(req.status)}
+          {loading ? (
+            <div className="flex justify-center py-20"><Loader className="animate-spin" size={32} /></div>
+          ) : filteredRequests.length === 0 ? (
+            <div className="text-center py-20 text-slate-400 bg-white rounded-2xl border"><FileText size={48} className="mx-auto mb-4 opacity-40" /><p>لا توجد طلبات إجازة</p></div>
+          ) : (
+            <div className="space-y-3">
+              {filteredRequests.map(req => (
+                <div key={req.id} className={`bg-white rounded-2xl p-5 border ${req.status === 'انتظار' ? 'border-amber-200' : ''} hover:shadow-md`}>
+                  <div className="flex items-start justify-between flex-wrap gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: `${getLeaveTypeColor(req.leave_type)}20`, color: getLeaveTypeColor(req.leave_type) }}>
+                          {getLeaveTypeLabel(req.leave_type)}
+                        </span>
+                        {statusBadge(req.status)}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        <span>{req.date_from} ← {req.date_to}</span>
+                        <span className="font-bold text-slate-700">{req.working_days_count} يوم</span>
+                      </div>
+                      {req.reason && <p className="text-sm text-slate-600 mt-2">{req.reason}</p>}
+                      {req.rejection_reason && req.status === 'مرفوض' && <p className="text-sm text-red-600 mt-2">الرفض: {req.rejection_reason}</p>}
+                    </div>
+                    {canApprove && req.status === 'انتظار' && (
+                      <div className="flex gap-2">
+                        <button onClick={() => handleApprove(req.id)} disabled={processingId === req.id} className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm disabled:opacity-50">موافقة</button>
+                        <button onClick={() => { setRejectingId(req.id); setRejectionReason(''); }} disabled={processingId === req.id} className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm disabled:opacity-50">رفض</button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-slate-500">
-                    <span className="flex items-center gap-1"><Calendar size={14} /> {req.start_date} → {req.end_date}</span>
-                    <span className="flex items-center gap-1"><Clock size={14} /> {req.days_count} يوم</span>
-                  </div>
-                  {req.reason && <p className="text-sm text-slate-600 mt-2">{req.reason}</p>}
-                  <div className="flex items-center gap-2 mt-3 text-xs text-slate-400">
-                    <User size={12} /> المشرف: {req.supervisor_name || 'قيد التحديد'}
-                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {rejectingId && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setRejectingId(null)}>
+              <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+                <h3 className="text-lg font-extrabold mb-3">سبب رفض الطلب</h3>
+                <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} rows={4} className="w-full border rounded-xl px-3 py-2.5" autoFocus />
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => setRejectingId(null)} className="px-4 py-2 bg-slate-100 rounded-xl">إلغاء</button>
+                  <button onClick={handleReject} disabled={!rejectionReason.trim()} className="px-4 py-2 bg-red-600 text-white rounded-xl">تأكيد الرفض</button>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
+      )}
+
+      {/* Permissions Tab */}
+      {activeTab === 'permissions' && (
+        <>
+          <div className={`bg-gradient-to-br ${pageGradient} rounded-2xl p-6 text-white`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-extrabold"><Clock size={24} className="inline ml-2" />طلبات الزمنيات</h2>
+                <p className="text-white/70 mt-1">إدارة طلبات الزمنيات بأنواعها الأربعة</p>
+              </div>
+              {canSubmit && (
+                <button onClick={() => setPermShowForm(!permShowForm)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-bold text-sm">
+                  {permShowForm ? 'إلغاء' : '+ طلب زمنية'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {canApprove && (
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: 'الإجمالي', value: permStats.total, color: 'bg-white' },
+                { label: 'قيد المراجعة', value: permStats.pending, color: 'bg-amber-50' },
+                { label: 'تمت الموافقة', value: permStats.approved, color: 'bg-emerald-50' },
+                { label: 'مرفوض', value: permStats.rejected, color: 'bg-red-50' },
+              ].map((s, i) => (
+                <div key={i} className={`rounded-2xl p-4 border ${s.color}`}>
+                  <div className="text-xs font-bold text-slate-500 mb-1">{s.label}</div>
+                  <div className="text-2xl font-extrabold text-slate-800">{s.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {canSubmit && permShowForm && (
+            <form onSubmit={handlePermSubmit} className="bg-white rounded-2xl p-6 border space-y-4">
+              <h3 className="text-lg font-extrabold">نموذج طلب زمنية</h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-1">نوع الزمنية</label>
+                  <select value={permFormData.permission_type} onChange={e => setPermFormData({ ...permFormData, permission_type: e.target.value as PermissionType })}
+                    className="w-full border rounded-xl px-3 py-2.5">
+                    {(['عادية', 'مغادرة', 'تعويضية', 'بدون_راتب'] as PermissionType[]).map(t => (
+                      <option key={t} value={t}>{t === 'عادية' ? 'زمنية عادية' : t === 'مغادرة' ? 'مغادرة العمل' : t === 'تعويضية' ? 'زمنية تعويضية' : 'بدون راتب'}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">التاريخ</label>
+                  <input type="date" value={permFormData.date} onChange={e => setPermFormData({ ...permFormData, date: e.target.value })} className="w-full border rounded-xl px-3 py-2.5" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-1">وقت الخروج</label>
+                  <input type="time" value={permFormData.expected_out_time} onChange={e => setPermFormData({ ...permFormData, expected_out_time: e.target.value })} className="w-full border rounded-xl px-3 py-2.5" required />
+                </div>
+                {permFormData.permission_type !== 'مغادرة' && (
+                  <div>
+                    <label className="block text-sm font-bold mb-1">وقت العودة</label>
+                    <input type="time" value={permFormData.expected_return_time} onChange={e => setPermFormData({ ...permFormData, expected_return_time: e.target.value })} className="w-full border rounded-xl px-3 py-2.5" />
+                  </div>
+                )}
+              </div>
+              <textarea value={permFormData.reason} onChange={e => setPermFormData({ ...permFormData, reason: e.target.value })} rows={3} className="w-full border rounded-xl px-3 py-2.5" placeholder="السبب..." required />
+              <button type="submit" disabled={permSubmitting} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold disabled:opacity-50">
+                {permSubmitting ? 'جاري...' : <><Send size={16} className="inline ml-1" />إرسال الطلب</>}
+              </button>
+            </form>
+          )}
+
+          {canApprove && (
+            <div className="bg-white rounded-2xl p-4 border flex gap-3">
+              <input type="text" placeholder="بحث..." value={permSearchQuery} onChange={e => setPermSearchQuery(e.target.value)} className="flex-1 border rounded-xl px-3 py-2.5" />
+              <select value={permStatusFilter} onChange={e => setPermStatusFilter(e.target.value as any)} className="border rounded-xl px-3 py-2.5">
+                <option value="all">جميع الحالات</option>
+                <option value="انتظار">قيد المراجعة</option>
+                <option value="موافق">موافق</option>
+                <option value="مرفوض">مرفوض</option>
+              </select>
+            </div>
+          )}
+
+          {permLoading ? (
+            <div className="flex justify-center py-20"><Loader className="animate-spin" size={32} /></div>
+          ) : filteredPermissions.length === 0 ? (
+            <div className="text-center py-20 text-slate-400 bg-white rounded-2xl border"><Clock size={48} className="mx-auto mb-4 opacity-40" /><p>لا توجد طلبات زمنية</p></div>
+          ) : (
+            <div className="space-y-3">
+              {filteredPermissions.map(perm => (
+                <div key={perm.id} className={`bg-white rounded-2xl p-5 border ${perm.status === 'انتظار' ? 'border-amber-200' : ''} hover:shadow-md`}>
+                  <div className="flex items-start justify-between flex-wrap gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: `${PERMISSION_TYPE_COLORS[perm.permission_type]}20`, color: PERMISSION_TYPE_COLORS[perm.permission_type] }}>
+                          {perm.permission_type === 'عادية' ? 'زمنية عادية' : perm.permission_type === 'مغادرة' ? 'مغادرة' : perm.permission_type === 'تعويضية' ? 'تعويضية' : 'بدون راتب'}
+                        </span>
+                        {statusBadge(perm.status)}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        <span>📅 {perm.date}</span>
+                        <span>🚪 {perm.expected_out_time}</span>
+                        {perm.expected_return_time && <span>🔙 {perm.expected_return_time}</span>}
+                      </div>
+                      {perm.reason && <p className="text-sm text-slate-600 mt-2">{perm.reason}</p>}
+                      {perm.rejection_reason && perm.status === 'مرفوض' && <p className="text-sm text-red-600 mt-2">الرفض: {perm.rejection_reason}</p>}
+                    </div>
+                    {canApprove && perm.status === 'انتظار' && (
+                      <div className="flex gap-2">
+                        <button onClick={() => handlePermApprove(perm.id)} disabled={permProcessingId === perm.id} className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm disabled:opacity-50">موافقة</button>
+                        <button onClick={() => { setPermRejectingId(perm.id); setPermRejectionReason(''); }} disabled={permProcessingId === perm.id} className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm disabled:opacity-50">رفض</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {permRejectingId && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPermRejectingId(null)}>
+              <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+                <h3 className="text-lg font-extrabold mb-3">سبب رفض الزمنية</h3>
+                <textarea value={permRejectionReason} onChange={e => setPermRejectionReason(e.target.value)} rows={4} className="w-full border rounded-xl px-3 py-2.5" autoFocus />
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => setPermRejectingId(null)} className="px-4 py-2 bg-slate-100 rounded-xl">إلغاء</button>
+                  <button onClick={handlePermReject} disabled={!permRejectionReason.trim()} className="px-4 py-2 bg-red-600 text-white rounded-xl">تأكيد الرفض</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

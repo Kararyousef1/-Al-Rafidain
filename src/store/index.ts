@@ -1,6 +1,25 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  إدارة الحالة الموحدة - نظام الرافدين HR
+ *  تم التحديث لاستخدام الأنواع الموحدة والدوال المساعدة
+ *  ✅ محسَّن مع نظام الإشعارات الجديد المتكامل مع Supabase
+ * ════════════════════════════════════════════════════════════════
+ */
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../sdk/supabase';
+import { login as sdkLogin, logout as sdkLogout, getUserProfile } from '../sdk/auth';
+import { addNotification, createWelcomeNotification, getUserNotifications, markAsRead, markAllAsRead, deleteNotification } from '../lib/notificationManager';
+import { 
+  fetchNotificationsFromServer, 
+  markAsReadOnServer, 
+  markAllAsReadOnServer, 
+  deleteNotificationOnServer,
+  subscribeToRealtimeNotifications
+} from '../lib/notificationService';
+import { getEffectivePermissions } from '../constants/permissions';
+import { normalizeUser, getUserDisplayName } from '../utils/userUtils';
 import type {
   User, Problem, Notification, UserRole,
   WellnessData, ChatMessage, AuditLog, Employee, Analytics
@@ -9,37 +28,73 @@ import type { LandingConfig, LandingVideo, LandingProduct, LandingNavLink, Landi
 import {
   mockUser, mockProblems, mockNotifications,
   mockWellnessData, mockEmployees, mockAnalytics, mockAuditLogs
-} from '../data/mockData';
+} from '../data/dev/mockData';
 
-// الصلاحيات الافتراضية لكل دور
-const defaultRolePermissions: Record<UserRole, string[]> = {
-  employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'attendance', 'leave-requests'],
-  hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications'],
-  gatekeeper: ['gatekeeper-portal', 'notifications'],
-  admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
-  developer: ['developer-dashboard', 'developer-attendance', 'developer-logs', 'developer-db', 'notifications', 'dashboard', 'developer-structure'],
-  supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
-  manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
-};
+// ════════════════════════════════════════════════════════════════
+//  دالة مساعدة لجلب المستخدم من جدول employees
+// ════════════════════════════════════════════════════════════════
 
-const getEffectivePermissions = (role: UserRole, dbPermissions?: string[] | null) => {
-  if (dbPermissions && Array.isArray(dbPermissions) && dbPermissions.length > 0) {
-    return dbPermissions;
+/**
+ * محاولة جلب بيانات المستخدم من جدول employees إذا لم يوجد في profiles
+ */
+async function tryFetchFromEmployees(userId: string): Promise<User | null> {
+  try {
+    const { data: emp } = await supabase
+      .from('employees')
+      .select('*, departments(name)')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!emp || !emp.user_id) {
+      console.warn(`⚠️ Employee with user_id ${userId} not found or has no user_id`);
+      return null;
+    }
+
+    // تحويل بيانات employees إلى User موحد
+    const employeeData = {
+      id: userId,                    // Frontend ID
+      user_id: emp.user_id,         // Auth ID
+      employee_id: emp.id,          // Backend ID
+      full_name: emp.full_name_ar || 
+                 `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
+      email: emp.email || '',
+      role: emp.role,
+      department: emp.departments?.name || null,
+      position: emp.position || null,
+      phone: emp.phone || null,
+      profile_image: emp.avatar_url || null,
+      status: emp.is_active ? 'active' : 'inactive',
+      can_manage_breaks: emp.can_manage_breaks || false,
+      created_at: emp.created_at,
+      updated_at: emp.updated_at,
+      permissions: [],
+    };
+
+    return normalizeUser(employeeData);
+  } catch (error) {
+    console.error('Error fetching from employees:', error);
+    return null;
   }
-  return defaultRolePermissions[role] || defaultRolePermissions['employee'];
-};
+}
+
+// ════════════════════════════════════════════════════════════════
+//  إدارة Real-time Subscriptions
+// ════════════════════════════════════════════════════════════════
 
 let _profileChannel: any = null;
+let _notificationUnsubscribe: (() => void) | null = null; // ✅ جديد للإشعارات
 
 const setupRealtimeProfileSubscription = (userId: string | undefined, setFn: any) => {
-  if (!userId) return;
+  // تنظيف الاشتراك السابق
   if (_profileChannel) {
     supabase.removeChannel(_profileChannel);
     _profileChannel = null;
   }
+
+  if (!userId) return;
   
-  // يشترك في تغييرات جدول profiles للمستخدم الحالي
-  const channel = supabase
+  // إنشاء اشتراك جديد
+  _profileChannel = supabase
     .channel(`profile-updates-${userId}`)
     .on(
       'postgres_changes',
@@ -50,31 +105,38 @@ const setupRealtimeProfileSubscription = (userId: string | undefined, setFn: any
         filter: `id=eq.${userId}`,
       },
       async (payload) => {
-        console.log('🔄 Profile updated in real-time, refreshing sidebar permissions...');
+        console.log('🔄 Profile updated in real-time, refreshing permissions...');
         const newProfile = payload.new as any;
-        const role = (newProfile.role as UserRole) || 'employee';
         
-        const { data: freshProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle();
-        
-        if (freshProfile) {
-          setFn({
-            user: {
+        try {
+          // جلب البيانات المحدثة
+          const { data: freshProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle();
+          
+          if (freshProfile) {
+            const role = (freshProfile.role as UserRole) || 'employee';
+            const normalizedUser = normalizeUser({
               ...freshProfile,
               permissions: getEffectivePermissions(role, freshProfile.permissions),
-            },
-          });
-          console.log('✅ Sidebar permissions updated from real-time subscription');
+            });
+            
+            setFn({ user: normalizedUser });
+            console.log('✅ User data updated from real-time subscription');
+          }
+        } catch (error) {
+          console.error('Error handling real-time profile update:', error);
         }
       }
     )
     .subscribe();
-  
-  _profileChannel = channel;
 };
+
+// ════════════════════════════════════════════════════════════════
+//  Auth Store - إدارة المصادقة
+// ════════════════════════════════════════════════════════════════
 
 interface AuthState {
   user: User | null;
@@ -86,6 +148,7 @@ interface AuthState {
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
   refreshUser: () => Promise<void>;
+  cleanup: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -93,216 +156,275 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   loading: true,
 
+  // ═══════════════ تهيئة النظام ═══════════════
   initialize: async () => {
     set({ loading: true });
     try {
+      // 1. التحقق من المستخدم المحلي
       const localUser = localStorage.getItem('user');
       const localRole = localStorage.getItem('userRole');
       
       if (localUser && localRole) {
         try {
           const parsedUser = JSON.parse(localUser);
-          set({
-            user: {
-              ...mockUser,
-              id: parsedUser.id,
-              username: parsedUser.username,
-              role: parsedUser.role as any,
-              full_name: parsedUser.full_name,
-              email: '',
-            },
-            isAuthenticated: true,
+          const normalizedUser = normalizeUser({
+            ...mockUser,
+            ...parsedUser,
+            role: parsedUser.role as UserRole,
+            permissions: getEffectivePermissions(parsedUser.role as UserRole, []),
           });
-          set({ loading: false });
+          
+          set({
+            user: normalizedUser,
+            isAuthenticated: true,
+            loading: false,
+          });
           return;
         } catch (e) {
+          // تنظيف البيانات التالفة
           localStorage.removeItem('user');
           localStorage.removeItem('userRole');
         }
       }
       
+      // 2. التحقق من جلسة Supabase
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
-        const { data: profile } = await supabase
+        // محاولة من profiles أولاً
+        let { data: profile } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .maybeSingle();
 
-        const role = (profile?.role as UserRole) || 'employee';
-        set({
-          user: profile ? {
+        // إذا لم يوجد، حاول من employees
+        if (!profile) {
+          console.log('🔄 User not found in profiles, trying employees table...');
+          profile = await tryFetchFromEmployees(session.user.id);
+        }
+
+        if (profile) {
+          const normalizedUser = normalizeUser({
             ...profile,
-            permissions: getEffectivePermissions(role, profile.permissions),
-          } : {
-            ...mockUser,
+            permissions: getEffectivePermissions(
+              profile.role as UserRole, 
+              profile.permissions
+            ),
+          });
+          
+          set({
+            user: normalizedUser,
+            isAuthenticated: true,
+          });
+          
+          // إعداد Real-time subscription
+          setupRealtimeProfileSubscription(session.user.id, set);
+        } else {
+          // إنشاء مستخدم افتراضي
+          const defaultUser = normalizeUser({
             id: session.user.id,
-            email: session.user.email ?? '',
-            role: role,
-            permissions: getEffectivePermissions(role, []),
-          },
-          isAuthenticated: true,
-        });
+            email: session.user.email || '',
+            full_name: session.user.user_metadata?.full_name || 'مستخدم جديد',
+            role: 'employee',
+            permissions: getEffectivePermissions('employee', []),
+          });
+          
+          set({
+            user: defaultUser,
+            isAuthenticated: true,
+          });
+        }
       }
 
+      // مراقبة تغييرات المصادقة
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
+          get().cleanup();
           set({ user: null, isAuthenticated: false });
           return;
         }
+        
         if (event === 'SIGNED_IN' && session.user) {
           await get().refreshUser();
           setupRealtimeProfileSubscription(session.user.id, set);
         }
       });
 
+      // إنشاء إشعار الترحيب
       if (session?.user) {
-        setupRealtimeProfileSubscription(session.user.id, set);
+        createWelcomeNotification(session.user.id);
       }
-    } catch (err) {
-      console.error('Auth init error:', err);
+      
+    } catch (error) {
+      console.error('Auth initialization error:', error);
     } finally {
       set({ loading: false });
     }
   },
 
-  /** دالة لإعادة تحميل بيانات المستخدم من Supabase فوراً */
-  refreshUser: async () => {
-    const state = get();
-    if (!state.isAuthenticated || !state.user?.id) return;
-    
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', state.user.id)
-        .maybeSingle();
-
-      if (profile) {
-        const role = (profile.role as UserRole) || 'employee';
-        set({
-          user: {
-            ...profile,
-            permissions: getEffectivePermissions(role, profile.permissions),
-          },
-        });
-        console.log('✅ User profile manually refreshed');
-      }
-    } catch (err) {
-      console.error('Error refreshing user:', err);
-    }
-  },
-
+  // ═══════════════ تسجيل الدخول ═══════════════
   login: async (email, password) => {
     set({ loading: true });
     try {
-      const finalEmail = email.includes('@') ? email : `${email}@kayan.hr`;
-      const { data, error } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
-      if (error) throw error;
+      const data = await sdkLogin(email, password);
 
       if (data.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        const role = (profile?.role as UserRole) || 'employee';
-        set({
-          user: profile ? {
+        const profile = await getUserProfile(data.user.id);
+        
+        if (profile) {
+          const normalizedUser = normalizeUser({
             ...profile,
-            permissions: getEffectivePermissions(role, profile.permissions),
-          } : {
-            ...mockUser,
-            id: data.user.id,
-            email: data.user.email ?? '',
-            role: role,
-            permissions: getEffectivePermissions(role, []),
-          },
-          isAuthenticated: true,
-        });
-        // إضافة إشعار ترحيب بعد كل تسجيل دخول
-        const { markNotificationRead } = useUIStore.getState();
-        const welcomeNotif = {
-          id: 'welcome-' + Date.now(),
-          title: 'مرحباً بك في الرافدين',
-          message: 'يمكنك الآن رفع مشاكلك وتتبعها بسهولة',
-          type: 'success' as const,
-          read: false,
-          createdAt: new Date().toISOString(),
-        };
-        useUIStore.setState((state) => ({
-          notifications: [welcomeNotif, ...state.notifications],
-        }));
-        setTimeout(() => useUIStore.getState().markNotificationRead(welcomeNotif.id), 6000);
-        setupRealtimeProfileSubscription(data.user.id, set);
+            permissions: getEffectivePermissions(
+              profile.role as UserRole, 
+              profile.permissions
+            ),
+          });
+          
+          set({
+            user: normalizedUser,
+            isAuthenticated: true,
+          });
+          
+          // إشعار الترحيب
+          createWelcomeNotification(data.user.id);
+          
+          // إشعار تسجيل الدخول
+          const userName = getUserDisplayName(normalizedUser);
+          const today = new Date().toISOString().slice(0, 10);
+          
+          addNotification(data.user.id, {
+            type: 'login',
+            priority: 'low',
+            title: '👋 مرحباً بعودتك',
+            message: `أهلاً ${userName}، تم تسجيل دخولك إلى نظام الرافدين`,
+            groupKey: `login-${data.user.id}-${today}`,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          });
+          
+          setupRealtimeProfileSubscription(data.user.id, set);
+        }
       }
+      
       return true;
-    } catch (err) {
-      console.error('Login error:', err);
+    } catch (error) {
+      console.error('Login error:', error);
       return false;
     } finally {
       set({ loading: false });
     }
   },
 
+  // ═══════════════ الدخول المحلي ═══════════════
   loginLocal: (username, role, fullName) => {
     const userRole = (role as UserRole) || 'employee';
     const localUser = {
-      id: 'emp-' + Date.now(),
+      id: 'local-' + Date.now(),
       username,
       role: userRole,
       full_name: fullName,
+      email: '',
     };
     
     localStorage.setItem('user', JSON.stringify(localUser));
     localStorage.setItem('userRole', userRole);
     
+    const normalizedUser = normalizeUser({
+      ...localUser,
+      permissions: getEffectivePermissions(userRole, []),
+    });
+    
     set({
-      user: {
-        ...mockUser,
-        id: localUser.id,
-        username: localUser.username,
-        role: userRole,
-        full_name: localUser.full_name,
-        email: '',
-        permissions: getEffectivePermissions(userRole, []),
-      },
+      user: normalizedUser,
       isAuthenticated: true,
     });
   },
 
+  // ═══════════════ تسجيل الخروج ═══════════════
   logout: async () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('userRole');
+    try {
+      get().cleanup();
+      localStorage.removeItem('user');
+      localStorage.removeItem('userRole');
+      await sdkLogout();
+      set({ user: null, isAuthenticated: false });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  },
+
+  // ═══════════════ تحديث بيانات المستخدم ═══════════════
+  updateUser: (data) => {
+    set((state) => ({
+      user: state.user ? normalizeUser({ ...state.user, ...data }) : null,
+    }));
+  },
+
+  // ═══════════════ إعادة تحميل بيانات المستخدم ═══════════════
+  refreshUser: async () => {
+    const state = get();
+    if (!state.isAuthenticated || !state.user?.id) return;
+    
+    try {
+      // محاولة من profiles
+      let { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', state.user.id)
+        .maybeSingle();
+
+      // إذا لم يوجد، حاول من employees
+      if (!profile) {
+        console.log('🔄 Refreshing user from employees table...');
+        profile = await tryFetchFromEmployees(state.user.id);
+      }
+
+      if (profile) {
+        const normalizedUser = normalizeUser({
+          ...profile,
+          permissions: getEffectivePermissions(
+            profile.role as UserRole, 
+            profile.permissions
+          ),
+        });
+        
+        set({ user: normalizedUser });
+        console.log('✅ User profile refreshed successfully');
+      }
+    } catch (error) {
+      console.error('Error refreshing user:', error);
+    }
+  },
+
+  // ═══════════════ تنظيف الموارد ═══════════════
+  cleanup: () => {
     if (_profileChannel) {
       supabase.removeChannel(_profileChannel);
       _profileChannel = null;
     }
-    await supabase.auth.signOut();
-    set({ user: null, isAuthenticated: false });
+    // ✅ جديد: تنظيف اشتراك الإشعارات
+    if (_notificationUnsubscribe) {
+      _notificationUnsubscribe();
+      _notificationUnsubscribe = null;
+    }
   },
-
-  updateUser: (data) =>
-    set((state) => ({
-      user: state.user ? { ...state.user, ...data } : null,
-    })),
 }));
 
-// ══════════════════════════════════════════
-//  PROBLEM STORE
-// ══════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+//  Problem Store - إدارة المشاكل
+// ════════════════════════════════════════════════════════════════
+
 interface ProblemState {
   problems: Problem[];
   addProblem: (problem: Omit<Problem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateProblem: (id: string, data: Partial<Problem>) => void;
   deleteProblem: (id: string) => void;
-  addComment: (problemId: string, text: string, authorId: string, authorName: string, authorRole: string) => void;
+  addComment: (problemId: string, text: string, authorId: string, authorName: string, authorRole: string) =>  void;
 }
 
 export const useProblemStore = create<ProblemState>((set) => ({
   problems: mockProblems,
+  
   addProblem: (problem) =>
     set((state) => ({
       problems: [{
@@ -321,16 +443,19 @@ export const useProblemStore = create<ProblemState>((set) => ({
         }],
       }, ...state.problems],
     })),
+    
   updateProblem: (id, data) =>
     set((state) => ({
       problems: state.problems.map((p) =>
         p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
       ),
     })),
+    
   deleteProblem: (id) =>
     set((state) => ({
       problems: state.problems.filter((p) => p.id !== id),
     })),
+    
   addComment: (problemId, text, authorId, authorName, authorRole) =>
     set((state) => ({
       problems: state.problems.map((p) =>
@@ -342,7 +467,7 @@ export const useProblemStore = create<ProblemState>((set) => ({
                 text,
                 authorId,
                 authorName,
-                authorRole: authorRole as any,
+                authorRole: authorRole as UserRole,
                 createdAt: new Date().toISOString(),
               }],
               updatedAt: new Date().toISOString(),
@@ -352,9 +477,10 @@ export const useProblemStore = create<ProblemState>((set) => ({
     })),
 }));
 
-// ══════════════════════════════════════════
-//  UI STORE
-// ══════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+//  UI Store - إدارة واجهة المستخدم المحسَّنة
+// ════════════════════════════════════════════════════════════════
+
 interface Toast {
   id: string;
   message: string;
@@ -365,7 +491,7 @@ export type { LandingConfig, LandingVideo, LandingProduct, LandingNavLink, Landi
 
 const defaultLandingConfig: LandingConfig = {
   themeColor: '#4f46e5',
-  logoSymbol: 'R',
+  logoSymbol: 'ر',
   logoUrl: '',
   logoTextAr: 'الرافدين',
   logoTextEn: 'Al-Rafidain',
@@ -373,12 +499,12 @@ const defaultLandingConfig: LandingConfig = {
   heroTitleEn: 'Innovation in Healthcare',
   heroDescAr: 'نحن في شركة الرافدين نسعى لتقديم أفضل المنتجات الطبية والدوائية بأعلى معايير الجودة العالمية، لضمان صحة وسلامة مجتمعنا.',
   heroDescEn: 'At Al-Rafidain, we strive to provide the best medical and pharmaceutical products with the highest global quality standards to ensure the health and safety of our community.',
-  aboutP1Ar: 'شركة الرافدين لإنتاج الأدوية هي إحدى أبرز وأعرق شركات القطاع الخاص المتخصصة في إنتاج الأدوية البشرية. تأسست الشركة عام ١٩٩٨ في العاصمة بغداد، وسرعان ما تبوأت مكانةً رائدةً في مجال تصنيع الأدوية والرعاية الصحية.',
-  aboutP1En: 'Al-Rafidain Pharmaceutical Production Company is one of the most prominent and prestigious private sector companies specializing in human medicine production. Founded in 1998 in the capital, Baghdad, the company quickly established a leading position in pharmaceutical manufacturing and healthcare.',
-  aboutP2Ar: 'تلتزم الشركة بالامتثال التام لمعايير ممارسات التصنيع الجيدة (GMP) التي وضعتها منظمة الصحة العالمية (WHO)، من خلال رقابة صارمة من مختبرات مراقبة الجودة التابعة لها. ويقود جهود الشركة المتواصلة والمتزايدة لكسب ثقة العملاء كوادرها الفنية والمهنية، والتي تضم عددًا من الخبراء ذوي الخبرة. ويعمل لدى الشركة أكثر من مائة موظف من مختلف المجالات والتخصصات العلمية، والذين يخضعون بانتظام لدورات تدريبية تنظمها الإدارة بالتعاون مع مختلف المعاهد الدولية، إيمانًا منها بضرورة ضمان تقدم الشركة وتعزيز مهارات الموظفين.',
-  aboutP2En: 'The company is committed to full compliance with Good Manufacturing Practices (GMP) standards set by the World Health Organization (WHO), through strict control by its quality control laboratories. The company\'s continuous efforts to earn customer trust are led by its technical and professional staff, including seasoned experts. The company employs over a hundred staff members from various scientific fields, who regularly undergo training courses in cooperation with international institutes to ensure progress and enhance skills.',
-  aboutP3Ar: 'يُعد رضا العملاء أحد الأهداف الرئيسية التي تجذب اهتمام الشركة باستمرار، ويُعتبر ركنًا أساسيًا من استراتيجيتها. منذ تأسيسها، سعت الشركة جاهدةً لتزويد عملائها بمنتجات تجمع بين الجودة والفعالية والسلامة والأسعار التنافسية. وقد منح هذا، إلى جانب العديد من العوامل الأخرى، الشركة الأفضلية على منافسيها على مر السنين.',
-  aboutP3En: 'Customer satisfaction is a main goal and a fundamental pillar of our strategy. Since its inception, the company has strived to provide products that combine quality, efficacy, safety, and competitive prices. This commitment has given the company an edge over its competitors over the years.',
+  aboutP1Ar: 'شركة الرافدين لإنتاج الأدوية هي إحدى أبرز وأعرق شركات القطاع الخاص المتخصصة في إنتاج الأدوية البشرية.',
+  aboutP1En: 'Al-Rafidain Pharmaceutical Production Company is one of the most prominent private sector companies specializing in human medicine production.',
+  aboutP2Ar: 'تلتزم الشركة بالامتثال التام لمعايير ممارسات التصنيع الجيدة (GMP) التي وضعتها منظمة الصحة العالمية.',
+  aboutP2En: 'The company is committed to full compliance with Good Manufacturing Practices (GMP) standards set by WHO.',
+  aboutP3Ar: 'يُعد رضا العملاء أحد الأهداف الرئيسية التي تجذب اهتمام الشركة باستمرار.',
+  aboutP3En: 'Customer satisfaction is a main goal and fundamental pillar of our strategy.',
   addressAr: 'العراق، بغداد - المنطقة الصناعية',
   addressEn: 'Iraq, Baghdad - Industrial Zone',
   mapUrl: '',
@@ -388,28 +514,24 @@ const defaultLandingConfig: LandingConfig = {
   showLocationSection: true,
   marketingTitleAr: 'التسويق والمبيعات',
   marketingTitleEn: 'Marketing & Sales',
-  marketingIntroAr: 'منذ تأسيسها، تهدف سياسة شركة وادي الرافيدين لإنتاج الأدوية إلى إنشاء فريق متطور وفعال يتكون من أطباء وصيادلة يعملون في مجال الترويج، بالإضافة إلى مراكز مبيعات موزعة في جميع المحافظات لربط المنتج بالمستهلك. تمتلك الشركة أيضا ثلاثة مستودعات رئيسية تقع في العاصمة بغداد، وهي مسؤولة عن إدارة والإشراف على الترويج الدوائي والتجاري في جميع المحافظات.',
-  marketingIntroEn: 'Since its establishment, Al-Rafidain Pharmaceutical Production Company\'s policy has aimed to build a developed and effective team of doctors and pharmacists working in promotion, along with sales centers distributed across all governorates to connect the product with the consumer. The company also owns three main warehouses in Baghdad, responsible for managing and supervising pharmaceutical and commercial promotion across all governorates.',
+  marketingIntroAr: 'منذ تأسيسها، تهدف سياسة شركة وادي الرافيدين لإنتاج الأدوية إلى إنشاء فريق متطور وفعال.',
+  marketingIntroEn: 'Since its establishment, Al-Rafidain policy has aimed to build a developed and effective team.',
   marketingVisionTitleAr: 'رؤيتنا',
   marketingVisionTitleEn: 'Our Vision',
-  marketingVisionTextAr: 'يسعى سعينا لضمان توفر أدوية عالية الجودة وبأسعار معقولة في جميع محافظات العراق.',
-  marketingVisionTextEn: 'We strive to ensure the availability of high-quality medicines at reasonable prices in all governorates of Iraq.',
-  marketingCommitmentAr: 'نحن ملتزمون بالعمل من أجل عالم أكثر سعادة لأننا من أبرز شركات الأدوية في العراق.',
-  marketingCommitmentEn: 'We are committed to working for a happier world as we are one of the leading pharmaceutical companies in Iraq.',
+  marketingVisionTextAr: 'نسعى لضمان توفر أدوية عالية الجودة وبأسعار معقولة في جميع محافظات العراق.',
+  marketingVisionTextEn: 'We strive to ensure high-quality medicines at reasonable prices in all Iraqi governorates.',
+  marketingCommitmentAr: 'نحن ملتزمون بالعمل من أجل عالم أكثر سعادة.',
+  marketingCommitmentEn: 'We are committed to working for a happier world.',
   showVideoSection: false,
   youtubeUrl: '',
   videos: [],
   products: [
-    { id: '1', titleAr: 'قسم الحبوب', titleEn: 'Tablets Dept', descAr: 'وصف مختصر لقسم الحبوب', descEn: 'Short description for Tablets Dept', detailsAr: 'تفاصيل التصنيع والمواد الفعالة...', detailsEn: 'Production details and active ingredients...', imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5e4a83350?auto=format&fit=crop&w=400&q=80' },
-    { id: '2', titleAr: 'قسم المساحيق', titleEn: 'Powders Dept', descAr: 'وصف مختصر لقسم المساحيق', descEn: 'Short description for Powders Dept', detailsAr: '', detailsEn: '', imageUrl: 'https://images.unsplash.com/photo-1631549916768-4119b2e5f926?auto=format&fit=crop&w=400&q=80' },
-    { id: '3', titleAr: 'قسم الشرابات والمعلقات', titleEn: 'Syrups & Suspensions', descAr: 'وصف مختصر لقسم الشرابات', descEn: 'Short description for Syrups', detailsAr: '', detailsEn: '', imageUrl: 'https://images.unsplash.com/photo-1550572017-e95e840d5b40?auto=format&fit=crop&w=400&q=80' },
-    { id: '4', titleAr: 'قسم المراهم والكريمات', titleEn: 'Ointments & Creams', descAr: 'وصف مختصر لقسم المراهم', descEn: 'Short description for Ointments', detailsAr: '', detailsEn: '', imageUrl: 'https://images.unsplash.com/photo-1629198688000-71f23e745b6e?auto=format&fit=crop&w=400&q=80' },
+    { id: '1', titleAr: 'قسم الحبوب', titleEn: 'Tablets', descAr: 'منتجات دوائية عالية الجودة', descEn: 'High-quality pharmaceutical products', detailsAr: '', detailsEn: '', imageUrl: '' },
+    { id: '2', titleAr: 'قسم المساحيق', titleEn: 'Powders', descAr: 'مساحيق طبية متطورة', descEn: 'Advanced medical powders', detailsAr: '', detailsEn: '', imageUrl: '' },
   ],
   stats: [
-    { id: 's1', value: 20, suffix: '+', labelAr: 'سنة خبرة', labelEn: 'Years Experience' },
+    { id: 's1', value: 25, suffix: '+', labelAr: 'سنة خبرة', labelEn: 'Years Experience' },
     { id: 's2', value: 500, suffix: '+', labelAr: 'منتج دوائي', labelEn: 'Products' },
-    { id: 's3', value: 1000, suffix: '+', labelAr: 'عميل موثوق', labelEn: 'Trusted Clients' },
-    { id: 's4', value: 50, suffix: '+', labelAr: 'وكيل معتمد', labelEn: 'Certified Agents' },
   ],
   customNavLinks: [],
   socialLinks: {},
@@ -445,6 +567,15 @@ interface UIState {
   clearChat: () => void;
   addToast: (message: string, type?: Toast['type']) => void;
   removeToast: (id: string) => void;
+  
+  // ✅ دوال إشعارات محسَّنة جديدة
+  loadNotificationsFromServer: (userId: string) => Promise<void>;
+  subscribeToNotifications: (userId: string) => void;
+  unsubscribeFromNotifications: () => void;
+  markNotificationReadEnhanced: (userId: string, id: string) => Promise<void>;
+  markAllReadEnhanced: (userId: string) => Promise<void>;
+  deleteNotificationEnhanced: (userId: string, id: string) => Promise<void>;
+  syncNotifications: (userId: string) => Promise<void>;
 }
 
 const isLocalUser = () => {
@@ -454,9 +585,9 @@ const isLocalUser = () => {
 
 export const useUIStore = create<UIState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       sidebarOpen: true,
-      activeView: 'dashboard',
+      activeView: 'employee-dashboard',
       landingConfig: defaultLandingConfig,
       userPermissions: [],
       isLoadingConfig: false,
@@ -471,29 +602,36 @@ export const useUIStore = create<UIState>()(
 
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      
       setActiveView: (view) => set((state) => {
         if (typeof window !== 'undefined' && window.innerWidth < 1024) {
           return { activeView: view, sidebarOpen: false };
         }
         return { activeView: view };
       }),
-      updateLandingConfig: (config) => set((state) => ({ landingConfig: { ...state.landingConfig, ...config } })),
+      
+      updateLandingConfig: (config) => 
+        set((state) => ({ landingConfig: { ...state.landingConfig, ...config } })),
 
       fetchLandingConfig: async () => {
         if (isLocalUser()) {
           set({ isLoadingConfig: false });
           return;
         }
+        
         set({ isLoadingConfig: true });
         try {
-          const { data, error } = await supabase.from('system_settings').select('landing_config').eq('id', 'singleton').single();
+          const { data, error } = await supabase
+            .from('system_settings')
+            .select('landing_config')
+            .eq('id', 'singleton')
+            .single();
+            
           if (!error && data?.landing_config) {
             set({ landingConfig: { ...defaultLandingConfig, ...data.landing_config } });
-          } else if (error) {
-            console.warn('⚠️ system_settings:', error.message);
           }
         } catch (err) {
-          console.warn('⚠️ Failed to fetch config:');
+          console.warn('Failed to fetch landing config:', err);
         } finally {
           set({ isLoadingConfig: false });
         }
@@ -504,14 +642,25 @@ export const useUIStore = create<UIState>()(
           set({ landingConfig: config });
           return { success: true };
         }
+        
         set({ isSavingConfig: true });
         try {
-          const { error } = await supabase.from('system_settings')
-            .upsert({ id: 'singleton', landing_config: config, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+          const { error } = await supabase
+            .from('system_settings')
+            .upsert(
+              { 
+                id: 'singleton', 
+                landing_config: config, 
+                updated_at: new Date().toISOString() 
+              }, 
+              { onConflict: 'id' }
+            );
+            
           if (error) {
-            console.warn('⚠️ system_settings RLS:', error.message);
-            return { success: false, error: `خطأ RLS: ${error.message}` };
+            console.warn('System settings RLS error:', error.message);
+            return { success: false, error: `خطأ في الصلاحيات: ${error.message}` };
           }
+          
           set({ landingConfig: config });
           return { success: true };
         } catch (err: any) {
@@ -525,30 +674,27 @@ export const useUIStore = create<UIState>()(
         if (isLocalUser()) {
           return URL.createObjectURL(file);
         }
+        
         try {
           const fileExt = file.name.split('.').pop();
           const fileName = `${path}/${Date.now()}.${fileExt}`;
-          const { error } = await supabase.storage.from('public-assets').upload(fileName, file, { upsert: true });
+          
+          const { error } = await supabase.storage
+            .from('public-assets')
+            .upload(fileName, file, { upsert: true });
+            
           if (error) throw error;
-          const { data } = supabase.storage.from('public-assets').getPublicUrl(fileName);
+          
+          const { data } = supabase.storage
+            .from('public-assets')
+            .getPublicUrl(fileName);
+            
           return data.publicUrl;
         } catch (err) {
           console.error('Upload failed:', err);
           return null;
         }
       },
-
-      markNotificationRead: (id) =>
-        set((state) => ({
-          notifications: state.notifications.map((n) =>
-            n.id === id ? { ...n, read: true } : n
-          ),
-        })),
-
-      markAllRead: () =>
-        set((state) => ({
-          notifications: state.notifications.map((n) => ({ ...n, read: true })),
-        })),
 
       addWellnessEntry: (entry) =>
         set((state) => ({ wellnessData: [entry, ...state.wellnessData] })),
@@ -563,6 +709,7 @@ export const useUIStore = create<UIState>()(
         set((state) => ({
           toasts: [...state.toasts, { id, message, type }],
         }));
+        
         setTimeout(() =>
           set((state) => ({
             toasts: state.toasts.filter((t) => t.id !== id),
@@ -574,13 +721,205 @@ export const useUIStore = create<UIState>()(
         set((state) => ({
           toasts: state.toasts.filter((t) => t.id !== id),
         })),
+
+      // ════════════════════════════════════════════════════════════════
+      // 🔔 دوال الإشعارات المحسَّنة الجديدة
+      // ════════════════════════════════════════════════════════════════
+
+      /**
+       * تحميل إشعارات من السيرفر ودمجها مع المحلية
+       */
+      loadNotificationsFromServer: async (userId: string) => {
+        try {
+          console.log('📥 Loading notifications from server...');
+          
+          // جلب من Supabase
+          const serverNotifications = await fetchNotificationsFromServer(userId, 50);
+          
+          // تحويل لصيغة AppNotification
+          const convertedNotifs = serverNotifications.map((dbNotif: any) => ({
+            id: dbNotif.id,
+            type: dbNotif.type,
+            priority: dbNotif.priority,
+            title: dbNotif.title,
+            message: dbNotif.message,
+            read: dbNotif.is_read,
+            createdAt: dbNotif.created_at,
+            readAt: dbNotif.read_at,
+            userId: dbNotif.user_id,
+            actionUrl: dbNotif.action_url,
+            groupKey: dbNotif.group_key,
+            metadata: dbNotif.metadata || {},
+            expiresAt: dbNotif.expires_at,
+          }));
+
+          // جلب المحلية
+          const localNotifs = getUserNotifications(userId);
+          
+          // دمج وإزالة التكرار (السيرفر له الأولوية)
+          const serverIds = new Set(convertedNotifs.map(n => n.id));
+          const uniqueLocalNotifs = localNotifs.filter(n => 
+            !serverIds.has(n.id) && n.id.startsWith('notif_')
+          );
+          
+          const mergedNotifs = [...convertedNotifs, ...uniqueLocalNotifs]
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+          set({ notifications: mergedNotifs });
+          console.log(`✅ Loaded ${mergedNotifs.length} notifications (${convertedNotifs.length} server + ${uniqueLocalNotifs.length} local)`);
+          
+        } catch (error) {
+          console.error('❌ Failed to load server notifications:', error);
+          // fallback للمحلية فقط
+          const localNotifs = getUserNotifications(userId);
+          set({ notifications: localNotifs });
+        }
+      },
+
+      /**
+       * الاشتراك في إشعارات Realtime
+       */
+      subscribeToNotifications: (userId: string) => {
+        console.log('🔴 Subscribing to realtime notifications...');
+        
+        // إلغاء الاشتراك السابق
+        if (_notificationUnsubscribe) {
+          _notificationUnsubscribe();
+        }
+
+        // اشتراك جديد
+        _notificationUnsubscribe = subscribeToRealtimeNotifications(userId, (newNotif) => {
+          console.log('🔔 New realtime notification received');
+          
+          // إضافة للحالة
+          set((state) => {
+            // تجنب التكرار
+            const exists = state.notifications.some(n => n.id === newNotif.id);
+            if (exists) return state;
+
+            const convertedNotif = {
+              id: newNotif.id,
+              type: newNotif.type,
+              priority: newNotif.priority,
+              title: newNotif.title,
+              message: newNotif.message,
+              read: newNotif.is_read,
+              createdAt: newNotif.created_at,
+              readAt: newNotif.read_at,
+              userId: newNotif.user_id,
+              actionUrl: newNotif.action_url,
+              groupKey: newNotif.group_key,
+              metadata: newNotif.metadata || {},
+              expiresAt: newNotif.expires_at,
+            };
+
+            return {
+              notifications: [convertedNotif, ...state.notifications]
+            };
+          });
+        });
+      },
+
+      /**
+       * إلغاء الاشتراك في Realtime
+       */
+      unsubscribeFromNotifications: () => {
+        if (_notificationUnsubscribe) {
+          _notificationUnsubscribe();
+          _notificationUnsubscribe = null;
+          console.log('🔴 Unsubscribed from realtime notifications');
+        }
+      },
+
+      /**
+       * تحديد إشعار كمقروء (محسَّن مع السيرفر)
+       */
+      markNotificationReadEnhanced: async (userId: string, id: string) => {
+        // تحديث فوري في الواجهة
+        set((state) => ({
+          notifications: state.notifications.map((n) =>
+            n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n
+          ),
+        }));
+
+        // تحديث السيرفر
+        await markAsReadOnServer(userId, id);
+        
+        // تحديث المحلي أيضاً
+        markAsRead(userId, id);
+      },
+
+      /**
+       * تحديد جميع الإشعارات كمقروءة (محسَّن)
+       */
+      markAllReadEnhanced: async (userId: string) => {
+        const now = new Date().toISOString();
+        
+        // تحديث فوري في الواجهة
+        set((state) => ({
+          notifications: state.notifications.map((n) => ({ 
+            ...n, 
+            read: true, 
+            readAt: n.readAt || now 
+          })),
+        }));
+
+        // تحديث السيرفر
+        await markAllAsReadOnServer(userId);
+        
+        // تحديث المحلي
+        markAllAsRead(userId);
+      },
+
+      /**
+       * حذف إشعار (محسَّن مع السيرفر)
+       */
+      deleteNotificationEnhanced: async (userId: string, id: string) => {
+        // حذف فوري من الواجهة
+        set((state) => ({
+          notifications: state.notifications.filter((n) => n.id !== id),
+        }));
+
+        // حذف من السيرفر
+        await deleteNotificationOnServer(userId, id);
+        
+        // حذف المحلي
+        deleteNotification(userId, id);
+      },
+
+      /**
+       * مزامنة شاملة للإشعارات
+       */
+      syncNotifications: async (userId: string) => {
+        console.log('🔄 Syncing notifications...');
+        await get().loadNotificationsFromServer(userId);
+      },
+
+      // ════════════════════════════════════════════════════════════════
+      // تحديث الدوال القديمة للتوافق مع النظام الجديد
+      // ════════════════════════════════════════════════════════════════
+
+      markNotificationRead: (id) => {
+        set((state) => ({
+          notifications: state.notifications.map((n) =>
+            n.id === id ? { ...n, read: true } : n
+          ),
+        }));
+      },
+
+      markAllRead: () => {
+        set((state) => ({
+          notifications: state.notifications.map((n) => ({ ...n, read: true })),
+        }));
+      },
     }),
     {
-      name: 'kayan-hr-ui',
+      name: 'rafidain-hr-ui',
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
         activeView: state.activeView,
         landingConfig: state.landingConfig,
+        // لا نحفظ الإشعارات في persist لأنها تتحمل من السيرفر
       }),
     }
   )

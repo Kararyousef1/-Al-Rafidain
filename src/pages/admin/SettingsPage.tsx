@@ -3,7 +3,7 @@ import { Save, Bell, Lock, Globe, Mail, Shield } from 'lucide-react';
 import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
+import { fetchGeneralSettings, saveGeneralSettings } from '../../sdk/settings';
 
 export default function SettingsPage() {
   const { addToast } = useUIStore();
@@ -26,9 +26,9 @@ export default function SettingsPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const { data, error } = await supabase.from('system_settings').select('general_settings').eq('id', 'singleton').single();
-        if (!error && data?.general_settings) {
-          setSettings(prev => ({ ...prev, ...data.general_settings }));
+        const savedSettings = await fetchGeneralSettings();
+        if (savedSettings) {
+          setSettings(prev => ({ ...prev, ...savedSettings }));
         }
       } catch (err) {
         console.error('Error loading settings:', err);
@@ -40,10 +40,7 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase.from('system_settings')
-        .update({ general_settings: settings })
-        .eq('id', 'singleton');
-      if (error) throw error;
+      await saveGeneralSettings(settings);
       addToast('تم حفظ الإعدادات بنجاح ✅', 'success');
     } catch (err) {
       console.error(err);

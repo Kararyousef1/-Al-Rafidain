@@ -9,6 +9,7 @@ dist-ssr/
 build/
 
 # Environment files (keep secrets safe)
+.env
 .env.local
 .env.development.local
 .env.test.local
@@ -39,3 +40,17 @@ lerna-debug.log*
 __pycache__/
 venv/
 env/
+
+# ============================================
+# Temporary development files (NOT for commit)
+# ============================================
+# These are scratch notes / build artifacts that
+# should never enter the repository.
+build_check.txt
+build_output.txt
+plandev.txt
+project-structure.txt
+
+# Local SQL migration logs
+*.sql.log
+sql-debug.log

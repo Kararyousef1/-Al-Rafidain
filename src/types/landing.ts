@@ -43,6 +43,14 @@ export interface LandingStat {
   labelEn: string;
 }
 
+export interface LandingAgent {
+  id: string;
+  nameAr: string;
+  nameEn: string;
+  logoUrl: string;
+  order?: number;
+}
+
 export interface LandingConfig {
   themeColor: string;
   logoSymbol: string;
@@ -83,6 +91,7 @@ export interface LandingConfig {
   products: LandingProduct[];
   customNavLinks: LandingNavLink[];
   stats?: LandingStat[];
+  agents?: LandingAgent[];
   socialLinks?: {
     facebook?: string;
     twitter?: string;

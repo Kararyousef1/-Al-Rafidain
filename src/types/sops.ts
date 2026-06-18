@@ -1,8 +1,27 @@
 // ── أنواع بيانات SOPs (Standard Operating Procedures) ──
+import type { RichContent } from './media';
 
 export type SOPStatus = 'active' | 'inactive' | 'draft';
 export type SOPApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type SOPViewMode = 'catalog' | 'reading' | 'approval';
+
+export interface MediaFile {
+  id: string;
+  type: 'image' | 'video' | 'document' | 'audio';
+  url: string;
+  title: string;
+  description?: string;
+  fileSize?: number;
+  mimeType?: string;
+}
+
+export interface SOPSection {
+  id: string;
+  title: string;
+  order: number;
+  content: string;
+  mediaFiles?: MediaFile[];
+}
 
 export interface SOP {
   id: string;
@@ -24,6 +43,9 @@ export interface SOP {
   tags: string[];
   duration: string; // مدة القراءة المتوقعة
   isMandatory: boolean;
+  content?: string | RichContent; // محتوى النص الكامل أو محتوى غني
+  coverImage?: { url: string; alt?: string } | string; // صورة الغلاف
+  sections?: SOPSection[];
 }
 
 export interface SOPReading {

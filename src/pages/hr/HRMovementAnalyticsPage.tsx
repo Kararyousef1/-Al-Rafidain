@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../sdk/supabase';
 import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Download, Users, ArrowRightLeft, Calendar, BarChart3, Clock, Loader, Archive, Search, BellRing, Key, Star, MessageSquare } from 'lucide-react';

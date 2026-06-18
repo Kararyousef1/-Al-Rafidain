@@ -1,3 +1,19 @@
+// شاملة لعميل Supabase
+export interface Database {
+  public: {
+    Tables: {
+      profiles: { Row: Profile; Insert: Partial<Profile>; Update: Partial<Profile> };
+      departments: { Row: Department; Insert: Partial<Department>; Update: Partial<Department> };
+      problems: { Row: Problem; Insert: Partial<Problem>; Update: Partial<Problem> };
+      incidents: { Row: Problem; Insert: Partial<Problem>; Update: Partial<Problem> };
+      notifications: { Row: Notification; Insert: Partial<Notification>; Update: Partial<Notification> };
+      wellness_entries: { Row: WellnessEntry; Insert: Partial<WellnessEntry>; Update: Partial<WellnessEntry> };
+      attendance_logs: { Row: AttendanceRecord; Insert: Partial<AttendanceRecord>; Update: Partial<AttendanceRecord> };
+      audit_logs: { Row: AuditLog; Insert: Partial<AuditLog>; Update: Partial<AuditLog> };
+    };
+  };
+}
+
 export type UserRole = 'employee' | 'hr' | 'admin'
 
 export type ProblemStatus = 
@@ -37,6 +53,19 @@ export interface Profile {
   fingerprint_id: string | null
   created_at: string
   updated_at: string
+  // أعمدة مُضافة للتوافق مع AdminEmployeesPage
+  rank?: string
+  manufacturing_dept?: string
+  permissions?: string[]
+  shift?: string
+  gatekeeper_type?: string
+  gatekeeper_pin?: string
+  status?: string
+  manager_id?: string | null
+  supervisor_id?: string | null
+  department_manager_id?: string | null
+  location?: string
+  profile_image?: string
 }
 
 export interface Department {

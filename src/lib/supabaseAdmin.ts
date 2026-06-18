@@ -1,35 +1,60 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ════════════════════════════════════════════════════════════════
 //  عميل Supabase بصلاحيات الخدمة (Service Role)
 //  يُستخدم حصرياً في لوحة الإدارة لإنشاء/تعديل/حذف حسابات المستخدمين
 //  الحقيقية في نظام المصادقة (auth.users) دون التأثير على جلسة المدير
 //  الحالي ودون الحاجة لتأكيد البريد الإلكتروني.
-//
-//  ملاحظة أمنية: مفتاح الخدمة قوي جداً. هذا الإعداد مناسب للتشغيل
-//  المحلي/الداخلي للنظام. في بيئة إنتاج عامة يُفضّل نقل هذه العمليات
-//  إلى Edge Function على الخادم.
 // ════════════════════════════════════════════════════════════════
 
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
 const serviceKey = (import.meta as any).env.VITE_SUPABASE_SERVICE_KEY;
 
-if (!supabaseUrl || !serviceKey) {
-  throw new Error(
-    '❌ متغيرات Supabase الخاصة بالإدارة مفقودة!\n' +
-    'أضف في ملف .env.local:\n' +
-    'VITE_SUPABASE_URL=https://xxxx.supabase.co\n' +
-    'VITE_SUPABASE_SERVICE_KEY=eyJ... (Service Role Key)'
+// التحقق من وجود المفتاح بشكل آمن (بدون إسقاط التطبيق)
+const isServiceKeyAvailable = !!(supabaseUrl && serviceKey);
+
+if (!isServiceKeyAvailable) {
+  console.warn(
+    '⚠️ VITE_SUPABASE_SERVICE_KEY غير موجود في .env\n' +
+    'وظائف الإدارة (إضافة/تعديل/حذف المستخدمين) لن تعمل.\n' +
+    'أضف المفتاح في ملف .env لتفعيل الوظائف الإدارية.'
   );
 }
 
-// عميل منفصل تماماً لا يحفظ جلسة حتى لا يبدّل جلسة المدير الحالي
-export const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-    detectSessionInUrl: false,
-  },
-});
+// عميل افتراضي آمن (يسمح بالقراءة فقط)
+const createSafeClient = (): SupabaseClient => {
+  if (!supabaseUrl) {
+    throw new Error('❌ VITE_SUPABASE_URL مفقود!');
+  }
+  if (!serviceKey) {
+    throw new Error(
+      '❌ VITE_SUPABASE_SERVICE_KEY مفقود!\n' +
+      'مفتاح Service Role مطلوب للعمليات الإدارية (إضافة/تعديل/حذف المستخدمين).\n' +
+      'أضف VITE_SUPABASE_SERVICE_KEY في ملف .env.\n' +
+      'يمكنك الحصول عليه من Supabase Dashboard > Settings > API'
+    );
+  }
+  return createClient(supabaseUrl, serviceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
+};
+
+// العميل الإداري - يعمل بشكل آمن
+export const supabaseAdmin = createSafeClient();
+
+// دالة للتحقق من توفر المفتاح الإداري
+export const isServiceKeyReady = () => isServiceKeyAvailable;
+
+// رسالة خطأ واضحة إذا حاول المستخدم عمليات إدارية بدون مفتاح
+export const getServiceKeyError = (): string | null => {
+  if (!isServiceKeyAvailable) {
+    return 'مفتاح Service Role غير متوفر. أضف VITE_SUPABASE_SERVICE_KEY في ملف .env لتفعيل العمليات الإدارية.';
+  }
+  return null;
+};
 
 export default supabaseAdmin;

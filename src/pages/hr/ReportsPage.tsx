@@ -4,9 +4,9 @@ import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { fetchAllIncidents, fetchAllWellnessEntries, fetchAllTimeLogs } from '../../sdk/reports';
 
 const reports = [
   { id: '1', title: 'تقرير المشاكل الشهري - ديسمبر 2024', type: 'problems', date: '2024-12-01', size: '2.4 MB', format: 'PDF' },
@@ -126,10 +126,9 @@ export default function ReportsPage() {
     setGenerating(type);
     
     try {
-      if (type === 'monthly') {
+        if (type === 'monthly') {
         // تقرير المشاكل الشامل
-        const { data: incData, error } = await supabase.from('incidents').select('*, reporter:profiles!reported_by(full_name, department)').order('created_at', { ascending: false });
-        if (error) throw error;
+        const incData = await fetchAllIncidents();
         
         const headers = ['#', 'عنوان المشكلة', 'الموظف', 'القسم', 'الفئة', 'الأولوية', 'الحالة', 'تاريخ الرفع'];
         const rows = (incData || []).map((inc, i) => [
@@ -147,8 +146,7 @@ export default function ReportsPage() {
       } 
       else if (type === 'wellness') {
         // تقرير الصحة النفسية
-        const { data: wellData, error } = await supabase.from('wellness_entries').select('*, profiles(full_name, department)').order('date', { ascending: false });
-        if (error) throw error;
+        const wellData = await fetchAllWellnessEntries();
 
         const headers = ['#', 'الموظف', 'القسم', 'التاريخ', 'مؤشر الصحة', 'التوتر', 'الطاقة', 'ملاحظات'];
         const rows = (wellData || []).map((w, i) => [
@@ -166,8 +164,7 @@ export default function ReportsPage() {
       }
       else if (type === 'attendance') {
         // تقرير الحضور والانصراف
-        const { data: attData, error } = await supabase.from('time_logs').select('*, profiles!employee_id(full_name, department)').order('timestamp', { ascending: false });
-        if (error) throw error;
+        const attData = await fetchAllTimeLogs();
 
         const headers = ['#', 'الموظف', 'القسم', 'نوع السجل', 'التاريخ والوقت', 'ملاحظات الكشك'];
         const rows = (attData || []).map((a, i) => [

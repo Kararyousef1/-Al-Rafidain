@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Clock, Download, FileText, MapPin, Coffee, LogIn, LogOut, Loader } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { Clock, Download, MapPin, Coffee, LogIn, LogOut, Loader } from 'lucide-react';
 import { format, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
+import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { useUIStore } from '../../store';
+import { fetchAllEmployees } from '../../sdk/employees';
+import { supabase } from '../../sdk/supabase';
 
 export default function AttendancePage() {
   const { addToast } = useUIStore();

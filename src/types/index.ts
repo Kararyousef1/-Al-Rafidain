@@ -1,40 +1,78 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  أنواع البيانات الأساسية - نظام الرافدين HR
+ *  تم التحديث والتوحيد لحل جميع التضاربات
+ * ════════════════════════════════════════════════════════════════
+ */
+
+// ═══════════════ الأنواع الأساسية ═══════════════
+
 export type UserRole = 'employee' | 'hr' | 'admin' | 'gatekeeper' | 'developer' | 'supervisor' | 'manager';
 export type Rank = 'executive' | 'manager' | 'supervisor' | 'employee';
 export type ManufacturingDept = 'syrups' | 'tablets' | 'ointments' | 'powders' | 'management' | 'hr' | 'it';
 export type GatekeeperType = 'employee_movement' | 'visitor_movement' | 'both';
 
+// ═══════════════ واجهة المستخدم الموحدة ═══════════════
+
 export interface User {
-  id: string;
-  // الاسم: full_name هو الحقل المعتمد في قاعدة البيانات (Supabase)،
-  // و name يبقى اختيارياً للتوافق مع الكود القديم.
-  full_name: string;
-  name?: string;
-  username?: string; // اسم المستخدم (للدخول المحلي)
+  // الهوية الأساسية
+  id: string;                     // Frontend ID (profiles.id أو auth.users.id)
+  user_id?: string;              // Auth ID (للربط مع auth.users)
+  employee_id?: string;          // Backend ID (employees.id)
+  
+  // الاسم (دعم كامل للتوافق)
+  full_name: string;             // المعتمد
+  name?: string;                 // للتوافق القديم
+  username?: string;             // للدخول المحلي
+  
+  // معلومات الاتصال
   email: string;
+  phone?: string | null;
+  
+  // الوظيفة والمنصب
   role: UserRole;
   rank?: Rank;
-  manufacturingDept?: ManufacturingDept;
   department?: string;
-  position?: string; // Job title e.g., Production Operator
-  // الصورة: profile_image هو الحقل المعتمد، و avatar اختياري للتوافق القديم.
-  profile_image?: string | null;
-  avatar?: string | null;
-  phone?: string | null;
+  position?: string;
+  manufacturingDept?: ManufacturingDept;
+  
+  // الصورة (دعم كامل)
+  profile_image?: string | null;  // المعتمد
+  avatar?: string | null;         // للتوافق القديم
+  certificateImage?: string;      // شهادة الموظف
+  
+  // الموقع والحالة
   location?: string;
-  joinDate?: string;
-  employeeId?: string;
   status?: 'active' | 'inactive' | 'on_leave';
-  manager?: string; // ID of the manager
-  custom_permissions?: Record<string, boolean>;
-  can_manage_breaks?: boolean;
-  wellnessScore?: number;
-  cv_data?: any;
+  
+  // التواريخ (موحدة)
   created_at?: string;
-  gatekeeper_type?: GatekeeperType; // لتحديد نوع حركة الحارس (موظفين، زوار، أو كلاهما)
-  gatekeeper_pin?: string; // الرمز السري للحارس (3 أرقام) للدخول إلى بوابة الحارس
-  permissions?: string[]; // مصفوفة الصلاحيات الديناميكية للشريط الجانبي
+  updated_at?: string;
+  joinDate?: string;
+ employeeId?: string;
+  
+  // الإدارة والمالية
+  manager?: string;              // ID المدير
+  salary?: number;
+  
+  // الصلاحيات (موحدة)
+  permissions?: string[];                        // المعتمد (array)
+  custom_permissions?: Record<string, boolean>;  // للتوافق القديم
+  can_manage_breaks?: boolean;                   // صلاحية خاصة
+  
+  // الرمز والأمان
+  gatekeeper_type?: GatekeeperType;
+  gatekeeper_pin?: string;       // الرمز السري للحارس (3 أرقام)
+  passcode?: string;             // للدخول المحلي
+  
+
+  // الإحصائيات والبيانات
+  wellnessScore?: number;
+  problemsCount?: number;
+  cv_data?: any;
 }
 
+// ═══════════════ المشاكل والتعليقات ═══════════════
 
 export type ProblemStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
 export type ProblemSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -88,6 +126,8 @@ export interface AIAnalysis {
   predictedResolutionTime: string;
 }
 
+// ═══════════════ الصحة والعافية ═══════════════
+
 export interface WellnessData {
   date: string;
   score: number;
@@ -97,6 +137,8 @@ export interface WellnessData {
   notes?: string;
 }
 
+// ═══════════════ الإشعارات ═══════════════
+
 export interface Notification {
   id: string;
   title: string;
@@ -105,7 +147,10 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   link?: string;
+  recipient_id?: string;
 }
+
+// ═══════════════ الاستبيانات ═══════════════
 
 export interface SurveyQuestion {
   id: string;
@@ -123,6 +168,8 @@ export interface Survey {
   deadline: string;
   isCompleted: boolean;
 }
+
+// ═══════════════ التحليلات والإحصائيات ═══════════════
 
 export interface DepartmentStats {
   name: string;
@@ -146,12 +193,16 @@ export interface Analytics {
   severityBreakdown: { severity: string; count: number }[];
 }
 
+// ═══════════════ المحادثة والذكاء الاصطناعي ═══════════════
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
 }
+
+// ═══════════════ سجلات التدقيق ═══════════════
 
 export interface AuditLog {
   id: string;
@@ -164,25 +215,9 @@ export interface AuditLog {
   ipAddress: string;
 }
 
-export interface Employee {
-  id: string;
-  name: string;
-  email: string;
-  passcode?: string; // Private key for login
-  role: UserRole;
-  rank: Rank;
-  manufacturingDept: ManufacturingDept;
-  department: string;
-  position: string;
-  phone: string;
-  location: string;
-  joinDate: string;
-  status: 'active' | 'inactive' | 'on_leave';
-  salary?: number;
-  manager?: string; // ID of the manager
-  custom_permissions?: Record<string, boolean>;
-  wellnessScore: number;
-  problemsCount: number;
-  profileImage?: string;
-  certificateImage?: string;
-}
+// ═══════════════ التوافق مع الكود القديم ═══════════════
+
+/**
+ * Employee هو نفسه User - للتوافق مع الكود القديم
+ */
+export type Employee = User;

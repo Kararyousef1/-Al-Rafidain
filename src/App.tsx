@@ -8,7 +8,9 @@ import LandingPage from './pages/public/LandingPage';
 import DisclaimerPage from './pages/public/DisclaimerPage';
 import SystemGuide from './pages/public/SystemGuide';
 import NotificationsPage from './pages/public/NotificationsPage';
-import StructureManager from './pages/developer/StructureManager';
+import MyNotificationsPage from './pages/public/MyNotificationsPage';
+const StructureManager = lazy(() => import('./components/dashboard/developer').then(m => ({ default: m.StructureManager })));
+const BiometricPage = lazy(() => import('./components/dashboard/developer').then(m => ({ default: m.BiometricSettings })));
 import WelcomeModal from './components/dashboard/WelcomeModal';
 
 const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard'));
@@ -21,6 +23,8 @@ const SurveyPage        = lazy(() => import('./pages/employee/SurveyPage'));
 const ProfilePage       = lazy(() => import('./pages/employee/ProfilePage'));
 const ContactPage       = lazy(() => import('./pages/employee/ContactPage'));
 const TrainingPage      = lazy(() => import('./pages/employee/TrainingPage'));
+const TrainingManagementPage = lazy(() => import('./pages/hr/TrainingManagementPage'));
+const TrainingReportsPage = lazy(() => import('./pages/hr/TrainingReportsPage'));
 const SOPsPage          = lazy(() => import('./pages/employee/SOPsPage'));
 const HRDashboard       = lazy(() => import('./pages/hr/HRDashboard'));
 const AnalyticsPage     = lazy(() => import('./pages/hr/AnalyticsPage'));
@@ -45,6 +49,9 @@ const SupervisorBreaksPage = lazy(() => import('./pages/supervisor/SupervisorBre
 const DeveloperDashboard = lazy(() => import('./components/dashboard/DeveloperDashboard'));
 const MyAttendancePage = lazy(() => import('./pages/employee/MyAttendancePage'));
 const LeaveRequestPage = lazy(() => import('./pages/employee/LeaveRequestPage'));
+const PermissionsPage = lazy(() => import('./pages/employee/PermissionsPage'));
+const ManagerAttendancePage = lazy(() => import('./pages/manager/ManagerAttendancePage'));
+const AIInsightsDashboard = lazy(() => import('./pages/employee/AIInsightsDashboard'));
 
 function PageLoader() {
   return (
@@ -84,6 +91,7 @@ function PageRenderer() {
       return <ProblemDetail problemId={id} />;
     }
     switch (activeView) {
+      case 'my-notifications': return <MyNotificationsPage />;
       case 'notifications': return <NotificationsPage />;
       case 'employee-dashboard': return <EmployeeDashboard />;
       case 'employee-problems': return <ProblemsList isHR={false} />;
@@ -97,7 +105,21 @@ function PageRenderer() {
       case 'employee-contact': return <ContactPage />;
       case 'employee-attendance': return <MyAttendancePage />;
       case 'employee-leave-requests': return <LeaveRequestPage />;
+      case 'employee-permissions': return <PermissionsPage />;
+      case 'employee-leaves': return <LeaveRequestPage />;
+      case 'kiosk-mode': return <KioskPage />;
+      case 'manager-dashboard': return <HRDashboard />;
+      case 'manager-attendance': return <ManagerAttendancePage />;
+      case 'manager-leave-requests': return <LeaveRequestPage />;
+      case 'manager-permissions': return <PermissionsPage />;
       case 'hr-dashboard': return <HRDashboard />;
+      case 'hr-leave-requests': return <LeaveRequestPage />;
+      case 'hr-permissions': return <PermissionsPage />;
+      case 'admin-permissions-management': return <PermissionsPage />;
+      case 'supervisor-leave-requests': return <LeaveRequestPage />;
+      case 'supervisor-permissions': return <PermissionsPage />;
+      case 'admin-attendance': return <AttendancePage />;
+      case 'admin-ai-insights': case 'hr-ai-insights': return <AIInsightsDashboard />;
       case 'hr-problems': return <ProblemsList isHR={true} />;
       case 'hr-analytics': case 'hr-sentiment': case 'hr-predictions': return <AnalyticsPage />;
       case 'hr-team': return <TeamPage />;
@@ -106,6 +128,8 @@ function PageRenderer() {
       case 'hr-communication': return <ContactPage />;
       case 'hr-reports': return <ReportsPage />;
       case 'hr-movement-analysis': return <HRMovementAnalyticsPage />;
+      case 'hr-manage-training': return <TrainingManagementPage />;
+      case 'hr-training-reports': return <TrainingReportsPage />;
       case 'gatekeeper': case 'hr-movements': case 'movements': case 'employee-movements': case 'gatekeeper-page': case 'gatekeeper-portal': return <GatekeeperPage />;
       case 'admin-dashboard': return <AdminDashboard />;
       case 'admin-cms': return <AdminLandingPageCMS />;
@@ -119,6 +143,7 @@ function PageRenderer() {
       case 'admin-sops-reports': return <AdminSOPsReport />;
       case 'admin-ai-config': return <AIConfigPage />;
       case 'developer-dashboard': return <DeveloperDashboard />;
+      case 'developer-attendance': return <BiometricPage />;
       case 'developer-structure': return <StructureManager />;
       case 'supervisor-breaks': return <SupervisorBreaksPage />;
       default: return <DefaultPage role={user?.role} />;
@@ -149,7 +174,7 @@ export default function App() {
   }, [setActiveView]);
   useEffect(() => {
     if (!user) return;
-    const views: Record<string, string> = { developer: 'developer-dashboard', hr: 'hr-dashboard', admin: 'admin-dashboard', employee: 'employee-dashboard', gatekeeper: 'gatekeeper-portal' };
+    const views: Record<string, string> = { developer: 'developer-dashboard', hr: 'hr-dashboard', admin: 'admin-dashboard', employee: 'employee-dashboard', gatekeeper: 'gatekeeper-portal', supervisor: 'employee-dashboard', manager: 'manager-dashboard' };
     setActiveView(views[user.role] ?? 'employee-dashboard');
   }, [user?.role, setActiveView]);
 

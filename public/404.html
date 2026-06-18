@@ -41,9 +41,18 @@
       </div>
     </div>
     <!--
-      GitHub Pages يستخدم هذا الملف كصفحة 404.
-      الـ workflow ينسخ dist/index.html -> dist/404.html تلقائياً.
-      هذا الملف يعرض شاشة تحميل فقط؛ الـ script الفعلي يتم حقنه من index.html.
+      GitHub Pages / استضافة بدون SPA: يُستخدم هذا الملف كصفحة 404.
+      نُعيد التوجيه إلى الصفحة الرئيسية ليُحمّل React SPA.
     -->
+    <script>
+      // إعادة التوجيه إلى الجذر لتحميل SPA
+      (function() {
+        var path = window.location.pathname;
+        // إذا لم نكن في الجذر، نُعيد التوجيه
+        if (path !== '/' && path !== '/index.html') {
+          window.location.replace('/' + (window.location.hash || ''));
+        }
+      })();
+    </script>
   </body>
 </html>

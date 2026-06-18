@@ -21,7 +21,7 @@ import {
   LandingVideo,
   LandingConfig
 } from '../../store';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../sdk/supabase';
 import LandingPage from '../public/LandingPage';
 
 // ════════════════════════════════════════════════════
@@ -884,20 +884,43 @@ const ProductCard = ({
 export default function AdminLandingPageCMS() {
   const { landingConfig, updateLandingConfig, addToast, setActiveView } = useUIStore();
 
-  const [config, setConfig] = useState<LandingConfig>({
-    videos: [], products: [], customNavLinks: [],
-    themeColor: '#4f46e5', logoTextAr: '', logoTextEn: '',
-    logoUrl: '', logoSymbol: '◆',
-    heroTitleAr: '', heroTitleEn: '', heroDescAr: '', heroDescEn: '',
-    aboutP1Ar: '', aboutP1En: '', aboutP2Ar: '', aboutP2En: '',
-    aboutP3Ar: '', aboutP3En: '', addressAr: '', addressEn: '', mapUrl: '',
-    showCareSection: true, showAgentsSection: true, showMarketingSection: true,
-    marketingTitleAr: '', marketingTitleEn: '', marketingIntroAr: '', marketingIntroEn: '',
-    marketingVisionTitleAr: '', marketingVisionTitleEn: '',
-    marketingVisionTextAr: '', marketingVisionTextEn: '',
-    marketingCommitmentAr: '', marketingCommitmentEn: '',
+  const [config, setConfig] = useState<LandingConfig>(() => ({
+    videos: [],
+    products: [],
+    customNavLinks: [],
+    themeColor: '#4f46e5',
+    logoTextAr: '',
+    logoTextEn: '',
+    logoUrl: '',
+    logoSymbol: '◆',
+    heroTitleAr: '',
+    heroTitleEn: '',
+    heroDescAr: '',
+    heroDescEn: '',
+    aboutP1Ar: '',
+    aboutP1En: '',
+    aboutP2Ar: '',
+    aboutP2En: '',
+    aboutP3Ar: '',
+    aboutP3En: '',
+    addressAr: '',
+    addressEn: '',
+    mapUrl: '',
+    showCareSection: true,
+    showAgentsSection: true,
+    showMarketingSection: true,
+    marketingTitleAr: '',
+    marketingTitleEn: '',
+    marketingIntroAr: '',
+    marketingIntroEn: '',
+    marketingVisionTitleAr: '',
+    marketingVisionTitleEn: '',
+    marketingVisionTextAr: '',
+    marketingVisionTextEn: '',
+    marketingCommitmentAr: '',
+    marketingCommitmentEn: '',
     ...landingConfig,
-  });
+  }));
 
   const [activeTab, setActiveTab] = useState('general');
   const [showPreview, setShowPreview] = useState(false);

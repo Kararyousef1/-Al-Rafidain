@@ -94,220 +94,9 @@ const translations = {
   }
 };
 
-// ── Sample SOPs Data ──
-const MOCK_SOPS: SOP[] = [
-  {
-    id: 'sop-001',
-    title: 'إجراءات تشغيل خط إنتاج الحبوب',
-    titleEn: 'Tablets Production Line SOP',
-    code: 'SOP-MFG-001',
-    description: 'إجراءات تشغيل وإيقاف خط إنتاج الأقراص الدوائية بما في ذلك التنظيف بين الدفعات',
-    descriptionEn: 'Procedures for starting and stopping the tablet production line including batch-to-batch cleaning',
-    department: 'tablets',
-    category: 'التصنيع',
-    pdfUrl: '#',
-    version: '2.1',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2025-01-15',
-    updatedAt: '2025-06-01',
-    effectiveDate: '2025-06-15',
-    reviewDate: '2026-06-15',
-    tags: ['tablets', 'production', 'cleaning'],
-    duration: '30',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-002',
-    title: 'إجراءات تنظيف غرفة التعبئة',
-    titleEn: 'Packaging Room Cleaning SOP',
-    code: 'SOP-QA-002',
-    description: 'إجراءات تنظيف وتعقيم غرفة التعبئة والتغليف وفق معايير GMP',
-    descriptionEn: 'Cleaning and sanitization procedures for the packaging room according to GMP standards',
-    department: 'quality',
-    category: 'التنظيف والتعقيم',
-    pdfUrl: '#',
-    version: '1.5',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2024-11-20',
-    updatedAt: '2025-05-10',
-    effectiveDate: '2025-05-20',
-    reviewDate: '2026-05-20',
-    tags: ['cleaning', 'packaging', 'gmp'],
-    duration: '20',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-003',
-    title: 'إجراءات أخذ العينات من المواد الخام',
-    titleEn: 'Raw Material Sampling SOP',
-    code: 'SOP-QC-003',
-    description: 'إجراءات أخذ عينات من المواد الخام الواردة لفحص الجودة',
-    descriptionEn: 'Procedures for sampling incoming raw materials for quality testing',
-    department: 'quality',
-    category: 'ضبط الجودة',
-    pdfUrl: '#',
-    version: '3.0',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2024-08-01',
-    updatedAt: '2025-04-01',
-    effectiveDate: '2025-04-15',
-    reviewDate: '2026-04-15',
-    tags: ['sampling', 'raw-materials', 'quality'],
-    duration: '25',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-004',
-    title: 'إجراءات تشغيل جهاز HPLC',
-    titleEn: 'HPLC Operation SOP',
-    code: 'SOP-LAB-004',
-    description: 'إجراءات تشغيل وصيانة جهاز الكروماتوغرافيا السائلة عالية الأداء',
-    descriptionEn: 'Procedures for operating and maintaining the High-Performance Liquid Chromatography system',
-    department: 'quality',
-    category: 'المختبرات',
-    pdfUrl: '#',
-    version: '2.3',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2024-06-15',
-    updatedAt: '2025-03-20',
-    effectiveDate: '2025-04-01',
-    reviewDate: '2026-04-01',
-    tags: ['hplc', 'laboratory', 'equipment'],
-    duration: '45',
-    isMandatory: false,
-  },
-  {
-    id: 'sop-005',
-    title: 'إجراءات السلامة في منطقة الإنتاج',
-    titleEn: 'Production Area Safety SOP',
-    code: 'SOP-SAF-005',
-    description: 'إجراءات السلامة العامة الواجب اتباعها في منطقة الإنتاج',
-    descriptionEn: 'General safety procedures to be followed in the production area',
-    department: 'general',
-    category: 'السلامة',
-    pdfUrl: '#',
-    version: '1.0',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2025-01-01',
-    updatedAt: '2025-01-01',
-    effectiveDate: '2025-01-15',
-    reviewDate: '2026-01-15',
-    tags: ['safety', 'production', 'general'],
-    duration: '15',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-006',
-    title: 'إجراءات توثيق الدفعات الإنتاجية',
-    titleEn: 'Batch Documentation SOP',
-    code: 'SOP-DOC-006',
-    description: 'إجراءات تعبئة وحفظ سجلات الدفعات الإنتاجية',
-    descriptionEn: 'Procedures for filling and maintaining batch production records',
-    department: 'general',
-    category: 'التوثيق',
-    pdfUrl: '#',
-    version: '2.0',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2024-09-10',
-    updatedAt: '2025-02-15',
-    effectiveDate: '2025-03-01',
-    reviewDate: '2026-03-01',
-    tags: ['documentation', 'batch-records', 'gmp'],
-    duration: '20',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-007',
-    title: 'إجراءات تشغيل خط إنتاج المراهم',
-    titleEn: 'Ointment Production Line SOP',
-    code: 'SOP-MFG-007',
-    description: 'إجراءات تشغيل خط إنتاج المراهم والكريمات الطبية',
-    descriptionEn: 'Procedures for operating the ointment and cream production line',
-    department: 'ointments',
-    category: 'التصنيع',
-    pdfUrl: '#',
-    version: '1.2',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2025-02-01',
-    updatedAt: '2025-06-10',
-    effectiveDate: '2025-06-20',
-    reviewDate: '2026-06-20',
-    tags: ['ointments', 'production'],
-    duration: '35',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-008',
-    title: 'إجراءات تعبئة الشرابات',
-    titleEn: 'Syrup Filling SOP',
-    code: 'SOP-MFG-008',
-    description: 'إجراءات تعبئة الشرابات والمعلقات في العبوات النهائية',
-    descriptionEn: 'Procedures for filling syrups and suspensions into final packaging',
-    department: 'syrups',
-    category: 'التعبئة والتغليف',
-    pdfUrl: '#',
-    version: '1.8',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2024-12-01',
-    updatedAt: '2025-05-20',
-    effectiveDate: '2025-06-01',
-    reviewDate: '2026-06-01',
-    tags: ['syrups', 'filling', 'packaging'],
-    duration: '25',
-    isMandatory: true,
-  },
-  {
-    id: 'sop-009',
-    title: 'إجراءات تخزين المواد الخام',
-    titleEn: 'Raw Material Storage SOP',
-    code: 'SOP-WH-009',
-    description: 'إجراءات استلام وتخزين المواد الخام في المستودعات',
-    descriptionEn: 'Procedures for receiving and storing raw materials in warehouses',
-    department: 'general',
-    category: 'التخزين',
-    pdfUrl: '#',
-    version: '1.0',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2025-03-01',
-    updatedAt: '2025-03-01',
-    effectiveDate: '2025-03-15',
-    reviewDate: '2026-03-15',
-    tags: ['storage', 'warehouse', 'raw-materials'],
-    duration: '20',
-    isMandatory: false,
-  },
-  {
-    id: 'sop-010',
-    title: 'إجراءات التعامل مع الانحرافات',
-    titleEn: 'Deviation Handling SOP',
-    code: 'SOP-QA-010',
-    description: 'إجراءات توثيق والتعامل مع الانحرافات في عمليات الإنتاج',
-    descriptionEn: 'Procedures for documenting and handling deviations in production processes',
-    department: 'quality',
-    category: 'ضبط الجودة',
-    pdfUrl: '#',
-    version: '2.2',
-    status: 'active',
-    createdBy: 'admin',
-    createdAt: '2024-07-15',
-    updatedAt: '2025-04-10',
-    effectiveDate: '2025-04-25',
-    reviewDate: '2026-04-25',
-    tags: ['deviation', 'quality', 'gmp'],
-    duration: '30',
-    isMandatory: true,
-  },
-];
-
+// ── سيتم تحميل SOPs من قاعدة البيانات لاحقاً ──
+// MOCK_SOPS فارغ حالياً - تُضاف الـ SOPs عبر لوحة إدارة SOPs
+const MOCK_SOPS: SOP[] = [];
 // ── Timer Component ──
 function ReadingTimer({ seconds }: { seconds: number }) {
   const mins = Math.floor(seconds / 60);
@@ -335,6 +124,11 @@ export default function SOPsPage() {
   const [filterCat, setFilterCat] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
 
+  // SOPs data from Supabase
+  const [sopsData, setSopsData] = useState<SOP[]>([]);
+  const [sopLoading, setSopLoading] = useState(true);
+  const [sopError, setSopError] = useState<string | null>(null);
+
   // Reading tracking state
   const [readings, setReadings] = useState<Record<string, SOPReading>>({});
   const [currentReading, setCurrentReading] = useState<SOPReading | null>(null);
@@ -349,9 +143,39 @@ export default function SOPsPage() {
   // Get user's department
   const userDept = user?.manufacturingDept || user?.department || '';
 
+  // Fetch SOPs from Supabase
+  useEffect(() => {
+    const fetchSOPs = async () => {
+      try {
+        setSopLoading(true);
+        setSopError(null);
+        const { data, error } = await supabase
+          .from('sops')
+          .select('*')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        setSopsData(data || []);
+      } catch (err: any) {
+        console.error('Error fetching SOPs:', err);
+        setSopError(err.message || 'فشل تحميل الـ SOPs');
+        // Fall back to empty array
+        setSopsData([]);
+      } finally {
+        setSopLoading(false);
+      }
+    };
+
+    fetchSOPs();
+  }, []);
+
   // Filter SOPs based on department and search
   const availableSops = useMemo(() => {
-    return MOCK_SOPS.filter(sop => {
+    return sopsData.filter(sop => {
       // Filter by department (show department-specific and general)
       if (sop.department !== userDept && sop.department !== 'general') return false;
       
@@ -379,7 +203,7 @@ export default function SOPsPage() {
 
       return sop.status === 'active';
     });
-  }, [MOCK_SOPS, userDept, search, filterCat, filterStatus, readings]);
+  }, [sopsData, userDept, search, filterCat, filterStatus, readings]);
 
   // Timer management
   useEffect(() => {

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
-import { supabaseAdmin } from '../../lib/supabaseAdmin';
-
-import { Search, Plus, Mail, Phone, MapPin, Briefcase, Star, Trash2, Edit2, Loader, ServerCrash, X, Camera, User as UserIcon, Eye, Key, ShieldCheck, CheckCircle2, LayoutDashboard, Heart, Bot, GraduationCap, ClipboardList, MessageSquare, FileText, Database, RefreshCw, Send } from 'lucide-react';
+import { Search, Plus, Mail, Phone, MapPin, Briefcase, Star, Trash2, Edit2, Loader, ServerCrash, X, Camera, User as UserIcon, Eye, Key, ShieldCheck, CheckCircle2, LayoutDashboard, Heart, Bot, GraduationCap, ClipboardList, MessageSquare, FileText, Database, RefreshCw, Send, Clock, Calendar, BookOpen, BarChart3, Cpu, Brain } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import { GatekeeperType } from '../../types';
 import { exportToStyledExcel } from '../../utils/exportToExcel';
 import { useAuthStore } from '../../store';
+import { fetchAllEmployees, fetchManagersList, updateEmployeeProfile, uploadProfileImage, getEmployeeStats, fetchDepartmentsList } from '../../sdk/employees';
+import { createUser, updateUser, deleteUser } from '../../sdk/auth';
+import { supabaseAdmin } from '../../sdk/supabaseAdmin';
 
 export default function AdminEmployeesPage() {
   const { user: currentUser } = useAuthStore();
@@ -29,42 +29,53 @@ export default function AdminEmployeesPage() {
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, category: 'عام' },
     { id: 'problems', label: 'المشاكل والطلبات', icon: FileText, category: 'عام' },
     { id: 'profile', label: 'الملف الشخصي', icon: UserIcon, category: 'عام' },
+    { id: 'notifications', label: 'التبليغات', icon: MessageSquare, category: 'عام' },
     { id: 'wellness', label: 'الصحة النفسية', icon: Heart, category: 'الموظف' },
     { id: 'ai-chat', label: 'المساعد الذكي', icon: Bot, category: 'الموظف' },
     { id: 'training', label: 'مركز التدريب', icon: GraduationCap, category: 'الموظف' },
     { id: 'sops', label: 'إجراءات SOP', icon: FileText, category: 'الموظف' },
     { id: 'survey', label: 'الاستبيانات', icon: ClipboardList, category: 'الموظف' },
     { id: 'contact', label: 'تواصل معنا', icon: MessageSquare, category: 'الموظف' },
-    { id: 'attendance', label: 'سجلات الحضور', icon: Briefcase, category: 'الموظف' },
-    { id: 'leave-requests', label: 'طلبات الإجازة', icon: FileText, category: 'الموظف' },
+    { id: 'my-attendance', label: 'حضوري', icon: Clock, category: 'الموظف' },
+    { id: 'my-leave-requests', label: 'طلباتي', icon: FileText, category: 'الموظف' },
+    { id: 'employee-permissions', label: 'الزمنيات', icon: Clock, category: 'الموظف' },
+    { id: 'employee-leaves', label: 'الإجازات', icon: Calendar, category: 'الموظف' },
     { id: 'movement-analysis', label: 'تحليل الحركة', icon: Star, category: 'الموارد البشرية' },
     { id: 'analytics', label: 'التحليلات', icon: Star, category: 'الموارد البشرية' },
     { id: 'team', label: 'فريق العمل', icon: UserIcon, category: 'الموارد البشرية' },
     { id: 'talent-market', label: 'سجل المؤهلات', icon: Star, category: 'الموارد البشرية' },
     { id: 'communication', label: 'صندوق البريد', icon: MessageSquare, category: 'الموارد البشرية' },
     { id: 'reports', label: 'التقارير', icon: FileText, category: 'الموارد البشرية' },
+    { id: 'attendance', label: 'سجلات الحضور', icon: Briefcase, category: 'الموارد البشرية' },
+    { id: 'leave-requests', label: 'طلبات الإجازة', icon: FileText, category: 'الموارد البشرية' },
+    { id: 'manage-training', label: 'إدارة التدريب', icon: BookOpen, category: 'الموارد البشرية' },
+    { id: 'training-reports', label: 'تقارير التدريب', icon: BarChart3, category: 'الموارد البشرية' },
     { id: 'supervisor-breaks', label: 'توقيع خروج الموظفين', icon: Briefcase, category: 'الإشراف' },
     { id: 'gatekeeper-portal', label: 'بوابة الحركة', icon: UserIcon, category: 'الحراسة' },
     { id: 'cms', label: 'إدارة صفحة الزوار', icon: Star, category: 'الإدارة' },
     { id: 'employees', label: 'إدارة الموظفين', icon: UserIcon, category: 'الإدارة' },
     { id: 'permissions', label: 'شجرة الصلاحيات', icon: ShieldCheck, category: 'الإدارة' },
     { id: 'gatekeeper-permissions', label: 'صلاحيات المدراء', icon: ShieldCheck, category: 'الإدارة' },
-    { id: 'notifications', label: 'التبليغات', icon: MessageSquare, category: 'الإدارة' },
+    { id: 'ai-config', label: 'إعداد الذكاء الاصطناعي', icon: Cpu, category: 'الإدارة' },
+    { id: 'admin-sops', label: 'إدارة SOPs', icon: FileText, category: 'الإدارة' },
+    { id: 'sops-reports', label: 'تقارير SOPs', icon: BarChart3, category: 'الإدارة' },
+    { id: 'admin-attendance', label: 'حضور الكل', icon: Clock, category: 'الإدارة' },
+    { id: 'ai-insights-dashboard', label: 'تحليل ذكي', icon: Brain, category: 'الإدارة' },
     { id: 'publish-announcements', label: 'نشر التبليغات', icon: Send, category: 'الإدارة' },
     { id: 'gallery-video', label: 'رفع فيديو المعرض', icon: Star, category: 'الإدارة' },
     { id: 'audit-log', label: 'سجل العمليات', icon: ShieldCheck, category: 'الإدارة' },
-    { id: 'ai-config', label: 'إعداد الذكاء الاصطناعي', icon: Bot, category: 'الإدارة' },
     { id: 'settings', label: 'الإعدادات', icon: Star, category: 'الإدارة' },
+    { id: 'developer-db', label: 'إدارة DB', icon: Database, category: 'الإدارة' },
   ];
 
   const defaultPermissions: Record<string, string[]> = {
-    employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'attendance', 'leave-requests'],
-    supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
-    manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'attendance', 'leave-requests', 'notifications'],
-    hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'profile', 'attendance', 'notifications'],
+    employee: ['dashboard', 'problems', 'wellness', 'survey', 'training', 'sops', 'ai-chat', 'contact', 'profile', 'notifications', 'my-attendance', 'my-leave-requests', 'employee-permissions', 'employee-leaves'],
+    supervisor: ['dashboard', 'problems', 'team', 'reports', 'supervisor-breaks', 'profile', 'my-attendance', 'my-leave-requests', 'notifications', 'attendance', 'leave-requests', 'employee-permissions', 'employee-leaves'],
+    manager: ['dashboard', 'problems', 'team', 'reports', 'analytics', 'supervisor-breaks', 'profile', 'my-attendance', 'my-leave-requests', 'notifications', 'attendance', 'leave-requests', 'employee-permissions', 'employee-leaves'],
+    hr: ['dashboard', 'movement-analysis', 'problems', 'analytics', 'team', 'talent-market', 'communication', 'reports', 'notifications', 'attendance', 'leave-requests', 'my-attendance', 'my-leave-requests', 'manage-training', 'training-reports', 'employee-permissions', 'employee-leaves'],
     gatekeeper: ['gatekeeper-portal', 'notifications'],
-    admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db'],
-    developer: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db', 'developer-dashboard', 'developer-attendance', 'developer-logs', 'publish-announcements'],
+    admin: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'admin-sops', 'sops-reports', 'ai-config', 'notifications', 'attendance', 'leave-requests', 'my-attendance', 'my-leave-requests', 'manage-training', 'training-reports', 'admin-attendance', 'ai-insights-dashboard', 'employee-permissions', 'employee-leaves', 'publish-announcements', 'gallery-video', 'developer-db'],
+    developer: ['dashboard', 'cms', 'employees', 'permissions', 'gatekeeper-permissions', 'reports', 'settings', 'audit-log', 'sops', 'admin-sops', 'sops-reports', 'ai-config', 'notifications', 'gallery-video', 'attendance', 'leave-requests', 'developer-db', 'developer-dashboard', 'developer-attendance', 'developer-logs', 'publish-announcements'],
   };
 
   const [formData, setFormData] = useState({
@@ -105,8 +116,7 @@ export default function AdminEmployeesPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
+      const data = await fetchAllEmployees();
       setEmployees(data || []);
     } catch (err: any) {
       setError('خطأ: ' + (err?.message || ''));
@@ -115,6 +125,7 @@ export default function AdminEmployeesPage() {
 
   const fetchAuthUsers = async () => {
     try {
+      if (!supabaseAdmin) { alert('مفتاح Service Role غير متوفر في ملف .env'); return; }
       const { data, error } = await supabaseAdmin.auth.admin.listUsers();
       if (error) throw error;
       setAuthUsers(data?.users || []);
@@ -125,8 +136,7 @@ export default function AdminEmployeesPage() {
   const handleDeleteAuthUser = async (userId: string, email: string) => {
     if (!confirm(`حذف "${email}" من النظام بالكامل؟`)) return;
     try {
-      await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => {});
-      try { await supabaseAdmin.from('profiles').delete().eq('id', userId); } catch {}
+      await deleteUser(userId);
       setAuthUsers(prev => prev.filter(u => u.id !== userId));
       setEmployees(prev => prev.filter(e => e.id !== userId));
       alert(`✅ تم حذف "${email}"`);
@@ -140,40 +150,46 @@ export default function AdminEmployeesPage() {
     const finalEmail = `${namePrefix}@alrafidain.com`;
     try {
       if (isEditMode && selectedEmp) {
-        await supabaseAdmin.from('profiles').update({
-          full_name: formData.full_name, email: finalEmail, role: formData.role, rank: formData.rank,
-          manufacturing_dept: formData.manufacturing_dept, department: formData.department || formData.manufacturing_dept,
-          position: formData.position, phone: formData.phone, location: formData.location,
-          profile_image: formData.profile_image, manager_id: formData.manager_id || null,
-          supervisor_id: formData.supervisor_id || null, department_manager_id: formData.department_manager_id || null,
-          shift: formData.shift, permissions: formData.permissions,
+        // استخدام SDK للتحديث
+        await updateEmployeeProfile(selectedEmp.id, {
+          full_name: formData.full_name,
+          email: finalEmail,
+          role: formData.role as any,
+          rank: formData.rank,
+          manufacturing_dept: formData.manufacturing_dept,
+          department: formData.department || formData.manufacturing_dept,
+          position: formData.position,
+          phone: formData.phone,
+          location: formData.location,
+          profile_image: formData.profile_image,
+          manager_id: formData.manager_id || undefined,
+          supervisor_id: formData.supervisor_id || undefined,
+          department_manager_id: formData.department_manager_id || undefined,
+          shift: formData.shift,
+          permissions: formData.permissions,
           gatekeeper_pin: formData.gatekeeper_pin || '',
-        }).eq('id', selectedEmp.id);
+        });
+        // تحديث كلمة المرور إذا تغيرت
         if (formData.passcode.length >= 6) {
-          await supabaseAdmin.auth.admin.updateUserById(selectedEmp.id, { password: formData.passcode }).catch(() => {});
+          await supabaseAdmin?.auth.admin.updateUserById(selectedEmp.id, { password: formData.passcode }).catch(() => {});
         }
         setIsModalOpen(false); await fetchEmployees();
         alert(`✅ تم تحديث "${formData.full_name}"`);
       } else {
-        const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: finalEmail, password: formData.passcode, email_confirm: true,
-          user_metadata: { full_name: formData.full_name },
+        // استخدام SDK للإنشاء (يرسل بيانات وصفية كاملة)
+        const result = await createUser({
+          email: finalEmail,
+          password: formData.passcode,
+          fullName: formData.full_name,
+          role: formData.role as any,
+          department: formData.department || formData.manufacturing_dept,
+          position: formData.position,
+          phone: formData.phone,
         });
-        if (createError) throw new Error(createError.message);
-        const newUserId = created?.user?.id;
-        if (!newUserId) throw new Error('فشل إنشاء الحساب');
-        await supabaseAdmin.from('profiles').upsert({
-          id: newUserId, full_name: formData.full_name, email: finalEmail,
-          role: formData.role, rank: formData.rank, manufacturing_dept: formData.manufacturing_dept,
-          department: formData.department || formData.manufacturing_dept, position: formData.position,
-          phone: formData.phone, location: formData.location, profile_image: formData.profile_image,
-          manager_id: formData.manager_id || null, supervisor_id: formData.supervisor_id || null,
-          department_manager_id: formData.department_manager_id || null, shift: formData.shift,
-          status: 'active', permissions: formData.permissions,
-          gatekeeper_pin: formData.gatekeeper_pin || '',
-        });
+        
+        // التأكد من إنشاء السجل في profiles (SDK يتولى trigger)
         setIsModalOpen(false); await fetchEmployees();
-        alert(`✅ تم إنشاء "${formData.full_name}"\nيمكنه الدخول بـ: ${formData.email}@alrafidain.com`);
+        alert(`✅ تم إنشاء "${formData.full_name}"\nيمكنه الدخول بـ: ${finalEmail}`);
       }
     } catch (err: any) { alert(`فشل: ${err.message}`); }
   };
@@ -196,12 +212,8 @@ export default function AdminEmployeesPage() {
   const handleFileUpload = async (file: File) => {
     setUploadingProfile(true);
     try {
-      const ext = file.name.split('.').pop();
-      const path = `employees/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('public-assets').upload(path, file, { upsert: true });
-      if (error) throw new Error('فشل الرفع');
-      const { data } = supabase.storage.from('public-assets').getPublicUrl(path);
-      setFormData(prev => ({ ...prev, profile_image: data.publicUrl }));
+      const url = await uploadProfileImage(file);
+      setFormData(prev => ({ ...prev, profile_image: url }));
     } catch (err: any) { alert(err.message); }
     finally { setUploadingProfile(false); }
   };
