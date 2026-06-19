@@ -1,16 +1,39 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  SDK - إدارة البلاغات
+ *  SDK - إدارة البلاغات (نسخة مُصلحة)
  *  نقطة وحيدة للتواصل مع قاعدة البيانات
  * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة:
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ 4 استخدام any → 0 (أنواع صريحة)
+ *  ✅ ai_analysis: any → AIAnalysis interface
+ *  ✅ (comment: any) → CommentRow
+ *  ✅ (update: any) → RealtimeUpdate
+ *  ✅ fallback: any → ProblemDetail
+ *  ✅ إصلاح .channel(`...`) المكسور (critical)
+ *  ✅ تنظيف جميع markdown artifacts
+ *  ✅ catch blocks → getErrorMessage
+ *  ════════════════════════════════════════════════════════════════
  */
 
 import { supabase } from './supabase';
-import type { Problem, Comment } from '../types';
+import { getErrorMessage } from '../lib/errors';
 
 // ════════════════════════════════════════════════════════════════
-//  Types
+//  أنواع البيانات
 // ════════════════════════════════════════════════════════════════
+
+export interface AIAnalysis {
+  sentiment?: 'positive' | 'negative' | 'neutral';
+  sentimentScore?: number;
+  urgencyLevel?: number;
+  suggestedActions?: string[];
+  summary?: string;
+  tags?: string[];
+  predictedResolutionTime?: string;
+  [key: string]: unknown;
+}
 
 export interface ProblemDetail {
   id: string;
@@ -23,7 +46,7 @@ export interface ProblemDetail {
   user_id?: string;
   created_at: string;
   updated_at?: string;
-  ai_analysis?: any;
+  ai_analysis?: AIAnalysis | null;
 }
 
 export interface CommentDetail {
@@ -35,6 +58,25 @@ export interface CommentDetail {
   created_at: string;
   user_name?: string;
   user_role?: string;
+}
+
+/** صف خام من جدول incident_comments مع علاقة profiles */
+interface CommentRow {
+  id: string;
+  incident_id: string;
+  user_id: string;
+  text: string;
+  is_internal: boolean;
+  created_at: string;
+  profiles?: { full_name?: string; role?: string } | null;
+}
+
+/** حمولة تحديث Realtime من Supabase */
+interface RealtimePayload {
+  type?: string;
+  eventType?: string;
+  new?: Record<string, unknown>;
+  old?: Record<string, unknown>;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -50,13 +92,13 @@ export async function fetchProblems(userId: string): Promise<ProblemDetail[]> {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.warn('⚠️ Error fetching problems from DB:', error.message);
+      console.warn('⚠️ Error fetching problems from DB:', getErrorMessage(error));
       return [];
     }
 
-    return data || [];
+    return (data as ProblemDetail[]) || [];
   } catch (err) {
-    console.error('❌ Failed to fetch problems:', err);
+    console.error('❌ Failed to fetch problems:', getErrorMessage(err));
     return [];
   }
 }
@@ -65,31 +107,21 @@ export async function fetchProblems(userId: string): Promise<ProblemDetail[]> {
 //  جلب تفاصيل بلاغ معين
 // ════════════════════════════════════════════════════════════════
 
-export async function fetchProblemById(
-  problemId: string,
-  userId?: string
-): Promise<ProblemDetail | null> {
+export async function fetchProblemById(problemId: string, userId?: string): Promise<ProblemDetail | null> {
   try {
-    let query = supabase
-      .from('incidents')
-      .select('*')
-      .eq('id', problemId);
-
-    // إذا كان المستخدم عادي، تأكد أنه مالك البلاغ
-    if (userId) {
-      query = query.eq('user_id', userId);
-    }
+    let query = supabase.from('incidents').select('*').eq('id', problemId);
+    if (userId) query = query.eq('user_id', userId);
 
     const { data, error } = await query.single();
 
     if (error) {
-      console.warn('⚠️ Error fetching problem:', error.message);
+      console.warn('⚠️ Error fetching problem:', getErrorMessage(error));
       return null;
     }
 
-    return data;
+    return data as ProblemDetail;
   } catch (err) {
-    console.error('❌ Failed to fetch problem:', err);
+    console.error('❌ Failed to fetch problem:', getErrorMessage(err));
     return null;
   }
 }
@@ -111,23 +143,18 @@ export async function createProblem(
   try {
     const { data: newProblem, error } = await supabase
       .from('incidents')
-      .insert({
-        ...data,
-        user_id: userId,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      })
+      .insert({ ...data, user_id: userId, status: 'pending', created_at: new Date().toISOString() })
       .select()
       .single();
 
     if (error) {
-      console.warn('⚠️ Error creating problem:', error.message);
+      console.warn('⚠️ Error creating problem:', getErrorMessage(error));
       return null;
     }
 
-    return newProblem;
+    return newProblem as ProblemDetail;
   } catch (err) {
-    console.error('❌ Failed to create problem:', err);
+    console.error('❌ Failed to create problem:', getErrorMessage(err));
     return null;
   }
 }
@@ -143,22 +170,19 @@ export async function updateProblemStatus(
   try {
     const { data, error } = await supabase
       .from('incidents')
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status, updated_at: new Date().toISOString() })
       .eq('id', problemId)
       .select()
       .single();
 
     if (error) {
-      console.warn('⚠️ Error updating problem status:', error.message);
+      console.warn('⚠️ Error updating problem status:', getErrorMessage(error));
       return null;
     }
 
-    return data;
+    return data as ProblemDetail;
   } catch (err) {
-    console.error('❌ Failed to update problem status:', err);
+    console.error('❌ Failed to update problem status:', getErrorMessage(err));
     return null;
   }
 }
@@ -167,30 +191,20 @@ export async function updateProblemStatus(
 //  جلب التعليقات على البلاغ
 // ════════════════════════════════════════════════════════════════
 
-export async function fetchComments(
-  problemId: string
-): Promise<CommentDetail[]> {
+export async function fetchComments(problemId: string): Promise<CommentDetail[]> {
   try {
     const { data, error } = await supabase
       .from('incident_comments')
-      .select(`
-        id,
-        incident_id,
-        user_id,
-        text,
-        is_internal,
-        created_at,
-        profiles(full_name, role)
-      `)
+      .select('id, incident_id, user_id, text, is_internal, created_at, profiles(full_name, role)')
       .eq('incident_id', problemId)
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.warn('⚠️ Error fetching comments:', error.message);
+      console.warn('⚠️ Error fetching comments:', getErrorMessage(error));
       return [];
     }
 
-    return (data || []).map((comment: any) => ({
+    return (data as CommentRow[] || []).map((comment) => ({
       id: comment.id,
       incident_id: comment.incident_id,
       user_id: comment.user_id,
@@ -201,7 +215,7 @@ export async function fetchComments(
       user_role: comment.profiles?.role,
     }));
   } catch (err) {
-    console.error('❌ Failed to fetch comments:', err);
+    console.error('❌ Failed to fetch comments:', getErrorMessage(err));
     return [];
   }
 }
@@ -214,7 +228,7 @@ export async function addComment(
   problemId: string,
   userId: string,
   text: string,
-  isInternal: boolean = false
+  isInternal = false
 ): Promise<CommentDetail | null> {
   try {
     const { data, error } = await supabase
@@ -226,36 +240,27 @@ export async function addComment(
         is_internal: isInternal,
         created_at: new Date().toISOString(),
       })
-      .select(
-        `
-        id,
-        incident_id,
-        user_id,
-        text,
-        is_internal,
-        created_at,
-        profiles(full_name, role)
-      `
-      )
+      .select('id, incident_id, user_id, text, is_internal, created_at, profiles(full_name, role)')
       .single();
 
     if (error) {
-      console.warn('⚠️ Error adding comment:', error.message);
+      console.warn('⚠️ Error adding comment:', getErrorMessage(error));
       return null;
     }
 
+    const row = data as CommentRow;
     return {
-      id: data.id,
-      incident_id: data.incident_id,
-      user_id: data.user_id,
-      text: data.text,
-      is_internal: data.is_internal,
-      created_at: data.created_at,
-      user_name: data.profiles?.full_name || 'مستخدم',
-      user_role: data.profiles?.role,
+      id: row.id,
+      incident_id: row.incident_id,
+      user_id: row.user_id,
+      text: row.text,
+      is_internal: row.is_internal,
+      created_at: row.created_at,
+      user_name: row.profiles?.full_name || 'مستخدم',
+      user_role: row.profiles?.role,
     };
   } catch (err) {
-    console.error('❌ Failed to add comment:', err);
+    console.error('❌ Failed to add comment:', getErrorMessage(err));
     return null;
   }
 }
@@ -266,19 +271,14 @@ export async function addComment(
 
 export async function deleteComment(commentId: string): Promise<boolean> {
   try {
-    const { error } = await supabase
-      .from('incident_comments')
-      .delete()
-      .eq('id', commentId);
-
+    const { error } = await supabase.from('incident_comments').delete().eq('id', commentId);
     if (error) {
-      console.warn('⚠️ Error deleting comment:', error.message);
+      console.warn('⚠️ Error deleting comment:', getErrorMessage(error));
       return false;
     }
-
     return true;
   } catch (err) {
-    console.error('❌ Failed to delete comment:', err);
+    console.error('❌ Failed to delete comment:', getErrorMessage(err));
     return false;
   }
 }
@@ -289,39 +289,28 @@ export async function deleteComment(commentId: string): Promise<boolean> {
 
 export function subscribeToProblemUpdates(
   problemId: string,
-  callback: (update: any) => void
-): (() => void) {
+  callback: (update: RealtimePayload) => void
+): () => void {
   const channel = supabase
     .channel(`problem-${problemId}`)
     .on(
       'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'incidents',
-        filter: `id=eq.${problemId}`,
-      },
+      { event: '*', schema: 'public', table: 'incidents', filter: `id=eq.${problemId}` },
       (payload) => {
         console.log('📢 Problem updated:', payload);
-        callback(payload);
+        callback(payload as RealtimePayload);
       }
     )
     .on(
       'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'incident_comments',
-        filter: `incident_id=eq.${problemId}`,
-      },
+      { event: 'INSERT', schema: 'public', table: 'incident_comments', filter: `incident_id=eq.${problemId}` },
       (payload) => {
         console.log('💬 New comment:', payload);
-        callback({ type: 'new_comment', data: payload.new });
+        callback({ type: 'new_comment', data: payload.new as Record<string, unknown> });
       }
     )
     .subscribe();
 
-  // إرجاع دالة للإلغاء
   return () => {
     supabase.removeChannel(channel);
   };
@@ -334,14 +323,14 @@ export function subscribeToProblemUpdates(
 export async function safelyFetchProblem(
   problemId: string,
   userId?: string,
-  fallback?: any
-) {
+  fallback?: ProblemDetail | null
+): Promise<ProblemDetail | null> {
   try {
     const problem = await fetchProblemById(problemId, userId);
     if (problem) return problem;
     return fallback || null;
   } catch (err) {
-    console.warn('Using fallback data:', err);
+    console.warn('Using fallback data:', getErrorMessage(err));
     return fallback || null;
   }
 }

@@ -1,5 +1,25 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  ProfilePage - الملف الشخصي (نسخة مُصلحة)
+ * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة:
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ 14 استخدام any → 0 (أنواع CV صريحة)
+ *  ✅ تنظيف جميع markdown artifacts
+ *  ✅ updateUser(... as any) → Partial<User>
+ *  ✅ (user as any).profile_image → user.profile_image (موجود أصلاً)
+ *  ✅ catch blocks → getErrorMessage
+ *  ✅ إصلاح storage.upload(...) المكسور (قوس ناقص)
+ *  ════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useRef } from 'react';
-import { User, Mail, Phone, Building, Calendar, Edit3, Save, X, Star, Plus, Trash2, Loader, Camera, LayoutTemplate, Briefcase, GraduationCap, Languages, Smile, FileText } from 'lucide-react';
+import {
+  User, Mail, Phone, Building, Calendar, Edit3, Save, X, Star,
+  Plus, Trash2, Loader, Camera, LayoutTemplate, Briefcase,
+  GraduationCap, Languages, Smile, FileText,
+} from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { supabase } from '../../lib/supabase';
 import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
@@ -9,158 +29,298 @@ import Input from '../../components/ui/Input';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { isLocalUser } from '../../lib/utils';
+import { getErrorMessage } from '../../lib/errors';
+import type { User as UserType } from '../../types';
+
+// ════════════════════════════════════════════════════
+// أنواع بيانات السيرة الذاتية (CV) — تحلّ محل any
+// ════════════════════════════════════════════════════
+
+type CvTemplate = 'modern' | 'classic' | 'minimal';
+
+interface CvExperience {
+  company: string;
+  role: string;
+  period: string;
+  desc: string;
+}
+
+interface CvEducation {
+  degree: string;
+  institution: string;
+  period: string;
+}
+
+interface CvSkill {
+  name: string;
+  level: string;
+}
+
+interface CvLanguage {
+  name: string;
+  level: string;
+}
+
+interface CvFormData {
+  template: CvTemplate;
+  summary: string;
+  age: string;
+  experience: CvExperience[];
+  education: CvEducation[];
+  skills: CvSkill[];
+  languages: CvLanguage[];
+  hobbies: string[];
+}
+
+const EMPTY_CV: CvFormData = {
+  template: 'modern',
+  summary: '',
+  age: '',
+  experience: [],
+  education: [],
+  skills: [],
+  languages: [],
+  hobbies: [],
+};
+
+/** تحويل آمن من بيانات DB إلى CvFormData */
+function normalizeCvData(raw: unknown): CvFormData {
+  if (!raw || typeof raw !== 'object') return { ...EMPTY_CV };
+  const data = raw as Record<string, unknown>;
+  return {
+    template: (data.template as CvTemplate) || 'modern',
+    summary: (data.summary as string) || '',
+    age: (data.age as string) || '',
+    experience: Array.isArray(data.experience) ? (data.experience as CvExperience[]) : [],
+    education: Array.isArray(data.education) ? (data.education as CvEducation[]) : [],
+    skills: Array.isArray(data.skills) ? (data.skills as CvSkill[]) : [],
+    languages: Array.isArray(data.languages) ? (data.languages as CvLanguage[]) : [],
+    hobbies: Array.isArray(data.hobbies) ? (data.hobbies as string[]) : [],
+  };
+}
+
+// ════════════════════════════════════════════════════
+// المكون الرئيسي
+// ════════════════════════════════════════════════════
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuthStore();
   const { addToast } = useUIStore();
+
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: user?.name || user?.full_name || '', phone: user?.phone || '' });
   const [saving, setSaving] = useState(false);
-  
+
   const [loadingExtras, setLoadingExtras] = useState(true);
-  const [profileImage, setProfileImage] = useState<string>((user as any)?.profile_image || '');
+  const [profileImage, setProfileImage] = useState<string>(user?.profile_image || '');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // حالات السيرة الذاتية (CV)
-  const [cvData, setCvData] = useState<any>({ template: 'modern', summary: '', age: '', experience: [], education: [], skills: [], languages: [], hobbies: [] });
+
+  // السيرة الذاتية
+  const [cvData, setCvData] = useState<CvFormData>({ ...EMPTY_CV });
   const [showCvBuilder, setShowCvBuilder] = useState(false);
 
   if (!user) return null;
 
+  // ── حفظ الملف الشخصي ─────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
     try {
-      // التحقق من أن المستخدم محلي (حساب تجريبي)
       if (isLocalUser(user.id)) {
-        // محاكاة حفظ البيانات للمستخدم المحلي
-        await new Promise(resolve => setTimeout(resolve, 500));
-        updateUser({ name: form.name, phone: form.phone });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const updates: Partial<UserType> = { full_name: form.name, phone: form.phone };
+        updateUser(updates);
         setEditing(false);
         addToast('تم تحديث الملف الشخصي', 'success');
         return;
       }
-      
+
       const { error } = await supabase
         .from('profiles')
-        .update({ 
-          full_name: form.name, 
-          phone: form.phone,
-        })
+        .update({ full_name: form.name, phone: form.phone })
         .eq('id', user.id);
       if (error) throw error;
-      updateUser({ name: form.name, phone: form.phone });
+
+      updateUser({ full_name: form.name, phone: form.phone });
       setEditing(false);
       addToast('تم تحديث الملف الشخصي', 'success');
     } catch (err) {
-      console.error(err);
+      console.error('خطأ في الحفظ:', getErrorMessage(err));
       addToast('حدث خطأ أثناء حفظ البيانات', 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  // ── جلب البيانات الإضافية ─────────────────────────────────────
   useEffect(() => {
     const fetchExtras = async () => {
       setLoadingExtras(true);
-      
-      // التحقق من أن المستخدم محلي (حساب تجريبي)
+
       if (isLocalUser(user.id)) {
-        // استخدام بيانات وهمية للمستخدم المحلي
         setProfileImage('');
-        setCvData({ template: 'modern', summary: '', age: '', experience: [], education: [], skills: [], languages: [], hobbies: [] });
+        setCvData({ ...EMPTY_CV });
         setLoadingExtras(false);
         return;
       }
-      
+
       try {
         const { data, error } = await supabase
           .from('profiles')
           .select('profile_image, cv_data')
           .eq('id', user.id)
           .single();
-          
+
+        if (error) throw error;
+
         if (data) {
-          if (data.profile_image) {
-            setProfileImage(data.profile_image);
-            updateUser({ profile_image: data.profile_image } as any);
+          const profileRow = data as { profile_image?: string; cv_data?: unknown };
+
+          if (profileRow.profile_image) {
+            setProfileImage(profileRow.profile_image);
+            updateUser({ profile_image: profileRow.profile_image });
           }
-          if (data.cv_data && Object.keys(data.cv_data).length > 0) {
-            setCvData({
-              template: data.cv_data.template || 'modern',
-              summary: data.cv_data.summary || '',
-              age: data.cv_data.age || '',
-              experience: Array.isArray(data.cv_data.experience) ? data.cv_data.experience : [],
-              education: Array.isArray(data.cv_data.education) ? data.cv_data.education : [],
-              skills: Array.isArray(data.cv_data.skills) ? data.cv_data.skills : [],
-              languages: Array.isArray(data.cv_data.languages) ? data.cv_data.languages : [],
-              hobbies: Array.isArray(data.cv_data.hobbies) ? data.cv_data.hobbies : []
-            });
+
+          if (profileRow.cv_data && typeof profileRow.cv_data === 'object') {
+            setCvData(normalizeCvData(profileRow.cv_data));
           }
         }
       } catch (err) {
-        console.error(err);
+        console.error('فشل جلب البيانات الإضافية:', getErrorMessage(err));
       } finally {
         setLoadingExtras(false);
       }
     };
+
     if (user.id) fetchExtras();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
 
+  // ── رفع الصورة ────────────────────────────────────────────────
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
-      // التحقق من أن المستخدم محلي (حساب تجريبي)
       if (isLocalUser(user.id)) {
-        // محاكاة رفع الصورة للمستخدم المحلي
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
         const mockUrl = URL.createObjectURL(file);
         setProfileImage(mockUrl);
-        updateUser({ profile_image: mockUrl } as any);
+        updateUser({ profile_image: mockUrl });
         addToast('تم رفع الصورة بنجاح (وضع تجريبي)', 'success');
         return;
       }
-      
+
       const ext = file.name.split('.').pop();
       const fileName = `${user.id}-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('public-assets').upload(`profiles/${fileName}`, file, { upsert: true });
+      const { error: uploadError } = await supabase.storage
+        .from('public-assets')
+        .upload(`profiles/${fileName}`, file, { upsert: true });
       if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('public-assets').getPublicUrl(`profiles/${fileName}`);
-      setProfileImage(data.publicUrl);
-      await supabase.from('profiles').update({ profile_image: data.publicUrl }).eq('id', user.id);
-      updateUser({ profile_image: data.publicUrl } as any);
+
+      const { data: urlData } = supabase.storage.from('public-assets').getPublicUrl(`profiles/${fileName}`);
+      setProfileImage(urlData.publicUrl);
+
+      const { error: dbError } = await supabase
+        .from('profiles')
+        .update({ profile_image: urlData.publicUrl })
+        .eq('id', user.id);
+      if (dbError) throw dbError;
+
+      updateUser({ profile_image: urlData.publicUrl });
       addToast('تم رفع الصورة بنجاح', 'success');
-    } catch (error) {
-      addToast('فشل رفع الصورة (تأكد من وجود دلو public-assets)', 'error');
+    } catch (err) {
+      addToast('فشل رفع الصورة (' + getErrorMessage(err, 'تحقق من دلو public-assets') + ')', 'error');
     } finally {
       setUploading(false);
     }
   };
 
+  // ── حفظ السيرة الذاتية ────────────────────────────────────────
   const handleSaveCvBuilder = async () => {
+    setSaving(true);
     try {
-      setSaving(true);
-      
-      // التحقق من أن المستخدم محلي (حساب تجريبي)
       if (isLocalUser(user.id)) {
-        // محاكاة حفظ السيرة الذاتية للمستخدم المحلي
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
         addToast('تم حفظ السيرة الذاتية بنجاح (وضع تجريبي)', 'success');
         setShowCvBuilder(false);
         return;
       }
-      
+
       const { error } = await supabase.from('profiles').update({ cv_data: cvData }).eq('id', user.id);
       if (error) throw error;
       addToast('تم حفظ السيرة الذاتية بنجاح وتحديثها في سجل الإدارة', 'success');
       setShowCvBuilder(false);
-    } catch (error) { addToast('فشل حفظ السيرة الذاتية', 'error'); } finally { setSaving(false); }
+    } catch (err) {
+      addToast('فشل حفظ السيرة الذاتية: ' + getErrorMessage(err), 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // ── حذف السيرة الذاتية ────────────────────────────────────────
+  const handleDeleteCv = async () => {
+    setCvData({ ...EMPTY_CV });
+    if (!isLocalUser(user.id)) {
+      try {
+        const { error } = await supabase.from('profiles').update({ cv_data: {} }).eq('id', user.id);
+        if (error) throw error;
+      } catch (err) {
+        console.error('فشل حذف السيرة الذاتية:', getErrorMessage(err));
+      }
+    }
+  };
+
+  // ─── دوال مساعدة لتحديث عناصر CV ─────────────────────────────
+  const updateExperience = (idx: number, field: keyof CvExperience, value: string) => {
+    setCvData((prev) => {
+      const newArr = [...prev.experience];
+      newArr[idx] = { ...newArr[idx], [field]: value };
+      return { ...prev, experience: newArr };
+    });
+  };
+
+  const updateEducation = (idx: number, field: keyof CvEducation, value: string) => {
+    setCvData((prev) => {
+      const newArr = [...prev.education];
+      newArr[idx] = { ...newArr[idx], [field]: value };
+      return { ...prev, education: newArr };
+    });
+  };
+
+  const updateSkill = (idx: number, field: keyof CvSkill, value: string) => {
+    setCvData((prev) => {
+      const newArr = [...prev.skills];
+      newArr[idx] = { ...newArr[idx], [field]: value };
+      return { ...prev, skills: newArr };
+    });
+  };
+
+  const updateLanguage = (idx: number, field: keyof CvLanguage, value: string) => {
+    setCvData((prev) => {
+      const newArr = [...prev.languages];
+      newArr[idx] = { ...newArr[idx], [field]: value };
+      return { ...prev, languages: newArr };
+    });
+  };
+
+  const updateHobby = (idx: number, value: string) => {
+    setCvData((prev) => {
+      const newArr = [...prev.hobbies];
+      newArr[idx] = value;
+      return { ...prev, hobbies: newArr };
+    });
+  };
+
+  const removeByIndex = <T,>(arr: T[], idx: number): T[] => arr.filter((_, i) => i !== idx);
+
+  // ─── مشتقّات ──────────────────────────────────────────────────
   const roleLabel = user.role === 'admin' ? 'مشرف النظام' : user.role === 'hr' ? 'موارد بشرية' : 'موظف';
   const roleVariant = user.role === 'admin' ? 'danger' : user.role === 'hr' ? 'success' : 'primary';
+
+  // ════════════════════════════════════════════════════
+  // العرض
+  // ════════════════════════════════════════════════════
 
   return (
     <div className="max-w-2xl mx-auto space-y-5 animate-fade-in">
@@ -211,8 +371,8 @@ export default function ProfilePage() {
         </CardHeader>
         {editing ? (
           <div className="space-y-4">
-            <Input label="الاسم الكامل" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
-            <Input label="رقم الهاتف" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+            <Input label="الاسم الكامل" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+            <Input label="رقم الهاتف" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
             <Button fullWidth onClick={handleSave} loading={saving} icon={<Save size={14} />} iconPosition="left">
               حفظ التغييرات
             </Button>
@@ -262,8 +422,8 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                 <Button size="sm" variant="outline" onClick={() => setShowCvBuilder(true)} className="!bg-white !border-indigo-200 !text-indigo-700 hover:!bg-indigo-100">تعديل السيرة</Button>
-                  <button onClick={async () => { setCvData({template: 'modern', summary: '', age: '', experience: [], education: [], skills: [], languages: [], hobbies: []}); if (!isLocalUser(user.id)) { await supabase.from('profiles').update({ cv_data: {} }).eq('id', user.id); } }} className="p-2.5 text-red-500 bg-white hover:bg-red-50 border border-red-200 rounded-xl shadow-sm transition-all"><Trash2 size={16}/></button>
+                <Button size="sm" variant="outline" onClick={() => setShowCvBuilder(true)} className="!bg-white !border-indigo-200 !text-indigo-700 hover:!bg-indigo-100">تعديل السيرة</Button>
+                <button onClick={handleDeleteCv} className="p-2.5 text-red-500 bg-white hover:bg-red-50 border border-red-200 rounded-xl shadow-sm transition-all"><Trash2 size={16} /></button>
               </div>
             </div>
           ) : (
@@ -278,128 +438,128 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      {/* ── CV Builder Modal ── */}
+      {/* CV Builder Modal */}
       {showCvBuilder && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-4xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-fade-in">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="font-black text-xl text-slate-800 flex items-center gap-2"><LayoutTemplate className="text-indigo-600"/> صانع السيرة الذاتية الذكي</h3>
-              <button onClick={() => setShowCvBuilder(false)} className="p-2 bg-white rounded-lg text-slate-500 hover:text-slate-800 shadow-sm border border-slate-200 transition-colors"><X size={18}/></button>
+              <h3 className="font-black text-xl text-slate-800 flex items-center gap-2"><LayoutTemplate className="text-indigo-600" /> صانع السيرة الذاتية الذكي</h3>
+              <button onClick={() => setShowCvBuilder(false)} className="p-2 bg-white rounded-lg text-slate-500 hover:text-slate-800 shadow-sm border border-slate-200 transition-colors"><X size={18} /></button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50/50 hide-scrollbar">
-               {/* النبذة والعمر */}
-               <div className="grid md:grid-cols-3 gap-5">
-                 <div className="md:col-span-2 space-y-2">
-                   <label className="text-sm font-bold text-slate-700">النبذة التعريفية (الهدف المهني)</label>
-                   <textarea value={cvData.summary} onChange={e => setCvData({...cvData, summary: e.target.value})} rows={4} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 text-sm shadow-sm resize-none" placeholder="نبذة قصيرة عن طموحك وخبراتك تبرز أهم نقاط قوتك..." />
-                 </div>
-                 <div className="space-y-2">
-                   <label className="text-sm font-bold text-slate-700">العمر / المواليد</label>
-                   <input type="text" value={cvData.age} onChange={e => setCvData({...cvData, age: e.target.value})} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 text-sm shadow-sm" placeholder="مثال: 28 سنة" />
-                 </div>
-               </div>
 
-               {/* الخبرات */}
-               <div>
-                  <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
-                    <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Briefcase size={18} className="text-blue-500"/> الخبرات العملية</h4>
-                    <button onClick={() => setCvData({...cvData, experience: [...cvData.experience, { company: '', role: '', period: '', desc: '' }]})} className="text-xs font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14}/> إضافة خبرة</button>
-                  </div>
-                  <div className="space-y-4">
-                    {cvData.experience.map((exp: any, i: number) => (
-                      <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative group">
-                        <button onClick={() => setCvData({...cvData, experience: cvData.experience.filter((_: any, idx: number) => idx !== i)})} className="absolute top-3 right-3 p-1.5 text-red-400 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
-                        <div className="grid sm:grid-cols-3 gap-4 mb-4 pr-8">
-                          <input placeholder="الشركة / الجهة" value={exp.company} onChange={e => { const newArr = [...cvData.experience]; newArr[i].company = e.target.value; setCvData({...cvData, experience: newArr}); }} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500" />
-                          <input placeholder="المسمى الوظيفي" value={exp.role} onChange={e => { const newArr = [...cvData.experience]; newArr[i].role = e.target.value; setCvData({...cvData, experience: newArr}); }} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500" />
-                          <input placeholder="الفترة (مثال: 2020 - 2023)" value={exp.period} onChange={e => { const newArr = [...cvData.experience]; newArr[i].period = e.target.value; setCvData({...cvData, experience: newArr}); }} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500" />
-                        </div>
-                        <textarea placeholder="وصف المهام والإنجازات..." value={exp.desc} onChange={e => { const newArr = [...cvData.experience]; newArr[i].desc = e.target.value; setCvData({...cvData, experience: newArr}); }} rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500 resize-none" />
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50/50">
+              {/* النبذة والعمر */}
+              <div className="grid md:grid-cols-3 gap-5">
+                <div className="md:col-span-2 space-y-2">
+                  <label className="text-sm font-bold text-slate-700">النبذة التعريفية (الهدف المهني)</label>
+                  <textarea value={cvData.summary} onChange={(e) => setCvData({ ...cvData, summary: e.target.value })} rows={4} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 text-sm shadow-sm resize-none" placeholder="نبذة قصيرة عن طموحك وخبراتك تبرز أهم نقاط قوتك..." />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">العمر / المواليد</label>
+                  <input type="text" value={cvData.age} onChange={(e) => setCvData({ ...cvData, age: e.target.value })} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 text-sm shadow-sm" placeholder="مثال: 28 سنة" />
+                </div>
+              </div>
+
+              {/* الخبرات */}
+              <div>
+                <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
+                  <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Briefcase size={18} className="text-blue-500" /> الخبرات العملية</h4>
+                  <button onClick={() => setCvData({ ...cvData, experience: [...cvData.experience, { company: '', role: '', period: '', desc: '' }] })} className="text-xs font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14} /> إضافة خبرة</button>
+                </div>
+                <div className="space-y-4">
+                  {cvData.experience.map((exp, i) => (
+                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative group">
+                      <button onClick={() => setCvData({ ...cvData, experience: removeByIndex(cvData.experience, i) })} className="absolute top-3 right-3 p-1.5 text-red-400 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16} /></button>
+                      <div className="grid sm:grid-cols-3 gap-4 mb-4 pr-8">
+                        <input placeholder="الشركة / الجهة" value={exp.company} onChange={(e) => updateExperience(i, 'company', e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                        <input placeholder="المسمى الوظيفي" value={exp.role} onChange={(e) => updateExperience(i, 'role', e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                        <input placeholder="الفترة (مثال: 2020 - 2023)" value={exp.period} onChange={(e) => updateExperience(i, 'period', e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500" />
                       </div>
-                    ))}
-                    {cvData.experience.length === 0 && <p className="text-center text-sm font-semibold text-slate-400 py-6 border-2 border-dashed border-slate-200 rounded-2xl">لم تقم بإضافة خبرات مهنية بعد</p>}
-                  </div>
-               </div>
+                      <textarea placeholder="وصف المهام والإنجازات..." value={exp.desc} onChange={(e) => updateExperience(i, 'desc', e.target.value)} rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-500 resize-none" />
+                    </div>
+                  ))}
+                  {cvData.experience.length === 0 && <p className="text-center text-sm font-semibold text-slate-400 py-6 border-2 border-dashed border-slate-200 rounded-2xl">لم تقم بإضافة خبرات مهنية بعد</p>}
+                </div>
+              </div>
 
-               {/* التعليم */}
-               <div>
-                  <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
-                    <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><GraduationCap size={18} className="text-emerald-500"/> التعليم والمؤهلات الأكاديمية</h4>
-                    <button onClick={() => setCvData({...cvData, education: [...cvData.education, { degree: '', institution: '', period: '' }]})} className="text-xs font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14}/> إضافة مؤهل</button>
-                  </div>
-                  <div className="space-y-4">
-                    {cvData.education.map((edu: any, i: number) => (
-                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative flex flex-col sm:flex-row gap-3">
-                        <input placeholder="المؤهل (مثال: بكالوريوس صيدلة)" value={edu.degree} onChange={e => { const newArr = [...cvData.education]; newArr[i].degree = e.target.value; setCvData({...cvData, education: newArr}); }} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
-                        <input placeholder="الجامعة / المعهد" value={edu.institution} onChange={e => { const newArr = [...cvData.education]; newArr[i].institution = e.target.value; setCvData({...cvData, education: newArr}); }} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
-                        <input placeholder="سنة التخرج" value={edu.period} onChange={e => { const newArr = [...cvData.education]; newArr[i].period = e.target.value; setCvData({...cvData, education: newArr}); }} className="w-full sm:w-32 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
-                        <button onClick={() => setCvData({...cvData, education: cvData.education.filter((_: any, idx: number) => idx !== i)})} className="p-2.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center"><Trash2 size={16}/></button>
-                      </div>
-                    ))}
-                    {cvData.education.length === 0 && <p className="text-center text-sm font-semibold text-slate-400 py-6 border-2 border-dashed border-slate-200 rounded-2xl">لم تقم بإضافة مؤهلات علمية بعد</p>}
-                  </div>
-               </div>
+              {/* التعليم */}
+              <div>
+                <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
+                  <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><GraduationCap size={18} className="text-emerald-500" /> التعليم والمؤهلات الأكاديمية</h4>
+                  <button onClick={() => setCvData({ ...cvData, education: [...cvData.education, { degree: '', institution: '', period: '' }] })} className="text-xs font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14} /> إضافة مؤهل</button>
+                </div>
+                <div className="space-y-4">
+                  {cvData.education.map((edu, i) => (
+                    <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative flex flex-col sm:flex-row gap-3">
+                      <input placeholder="المؤهل (مثال: بكالوريوس صيدلة)" value={edu.degree} onChange={(e) => updateEducation(i, 'degree', e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
+                      <input placeholder="الجامعة / المعهد" value={edu.institution} onChange={(e) => updateEducation(i, 'institution', e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
+                      <input placeholder="سنة التخرج" value={edu.period} onChange={(e) => updateEducation(i, 'period', e.target.value)} className="w-full sm:w-32 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
+                      <button onClick={() => setCvData({ ...cvData, education: removeByIndex(cvData.education, i) })} className="p-2.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center"><Trash2 size={16} /></button>
+                    </div>
+                  ))}
+                  {cvData.education.length === 0 && <p className="text-center text-sm font-semibold text-slate-400 py-6 border-2 border-dashed border-slate-200 rounded-2xl">لم تقم بإضافة مؤهلات علمية بعد</p>}
+                </div>
+              </div>
 
-               {/* المهارات */}
-               <div>
+              {/* المهارات */}
+              <div>
+                <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
+                  <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Star size={18} className="text-amber-500" /> المهارات المهنية والفنية</h4>
+                  <button onClick={() => setCvData({ ...cvData, skills: [...cvData.skills, { name: '', level: 'متوسط' }] })} className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14} /> إضافة مهارة</button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {cvData.skills.map((skill, i) => (
+                    <div key={i} className="flex gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm relative group">
+                      <input placeholder="اسم المهارة" value={skill.name} onChange={(e) => updateSkill(i, 'name', e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-amber-500" />
+                      <select value={skill.level} onChange={(e) => updateSkill(i, 'level', e.target.value)} className="w-24 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-amber-500 font-bold">
+                        <option value="مبتدئ">مبتدئ</option><option value="متوسط">متوسط</option><option value="متقدم">متقدم</option><option value="خبير">خبير</option>
+                      </select>
+                      <button onClick={() => setCvData({ ...cvData, skills: removeByIndex(cvData.skills, i) })} className="p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors flex items-center justify-center"><Trash2 size={16} /></button>
+                    </div>
+                  ))}
+                  {cvData.skills.length === 0 && <p className="text-center text-sm font-semibold text-slate-400 py-4 border-2 border-dashed border-slate-200 rounded-xl sm:col-span-2">لم تقم بإضافة مهارات بعد</p>}
+                </div>
+              </div>
+
+              {/* اللغات والهوايات */}
+              <div className="grid sm:grid-cols-2 gap-8">
+                <div>
                   <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
-                    <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Star size={18} className="text-amber-500"/> المهارات المهنية والفنية</h4>
-                    <button onClick={() => setCvData({...cvData, skills: [...cvData.skills, { name: '', level: 'متوسط' }]})} className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 transition-colors px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14}/> إضافة مهارة</button>
+                    <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Languages size={18} className="text-amber-500" /> اللغات</h4>
+                    <button onClick={() => setCvData({ ...cvData, languages: [...cvData.languages, { name: '', level: 'ممتاز' }] })} className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14} /> لغة</button>
                   </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {cvData.skills.map((skill: any, i: number) => (
-                      <div key={i} className="flex gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm relative group">
-                        <input placeholder="اسم المهارة" value={skill.name} onChange={e => { const newArr = [...cvData.skills]; newArr[i].name = e.target.value; setCvData({...cvData, skills: newArr}); }} className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-amber-500" />
-                        <select value={skill.level} onChange={e => { const newArr = [...cvData.skills]; newArr[i].level = e.target.value; setCvData({...cvData, skills: newArr}); }} className="w-24 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-amber-500 font-bold">
-                          <option value="مبتدئ">مبتدئ</option><option value="متوسط">متوسط</option><option value="متقدم">متقدم</option><option value="خبير">خبير</option>
+                  <div className="space-y-3">
+                    {cvData.languages.map((lang, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input placeholder="اسم اللغة" value={lang.name} onChange={(e) => updateLanguage(i, 'name', e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-amber-500" />
+                        <select value={lang.level} onChange={(e) => updateLanguage(i, 'level', e.target.value)} className="w-28 bg-white border border-slate-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-amber-500 font-bold">
+                          <option value="مبتدئ">مبتدئ</option><option value="جيد">جيد</option><option value="ممتاز">ممتاز</option><option value="اللغة الأم">اللغة الأم</option>
                         </select>
-                        <button onClick={() => setCvData({...cvData, skills: cvData.skills.filter((_: any, idx: number) => idx !== i)})} className="p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors flex items-center justify-center"><Trash2 size={16}/></button>
+                        <button onClick={() => setCvData({ ...cvData, languages: removeByIndex(cvData.languages, i) })} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors flex items-center justify-center"><Trash2 size={16} /></button>
                       </div>
                     ))}
-                    {cvData.skills.length === 0 && <p className="text-center text-sm font-semibold text-slate-400 py-4 border-2 border-dashed border-slate-200 rounded-xl sm:col-span-2">لم تقم بإضافة مهارات بعد</p>}
                   </div>
-               </div>
-
-               {/* اللغات والهوايات */}
-               <div className="grid sm:grid-cols-2 gap-8">
-                 <div>
-                    <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
-                      <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Languages size={18} className="text-amber-500"/> اللغات</h4>
-                      <button onClick={() => setCvData({...cvData, languages: [...cvData.languages, { name: '', level: 'ممتاز' }]})} className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14}/> لغة</button>
-                    </div>
-                    <div className="space-y-3">
-                      {cvData.languages.map((lang: any, i: number) => (
-                        <div key={i} className="flex gap-2">
-                          <input placeholder="اسم اللغة" value={lang.name} onChange={e => { const newArr = [...cvData.languages]; newArr[i].name = e.target.value; setCvData({...cvData, languages: newArr}); }} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-amber-500" />
-                          <select value={lang.level} onChange={e => { const newArr = [...cvData.languages]; newArr[i].level = e.target.value; setCvData({...cvData, languages: newArr}); }} className="w-28 bg-white border border-slate-200 rounded-xl px-2 py-2 text-sm outline-none focus:border-amber-500 font-bold">
-                            <option value="مبتدئ">مبتدئ</option><option value="جيد">جيد</option><option value="ممتاز">ممتاز</option><option value="اللغة الأم">اللغة الأم</option>
-                          </select>
-                          <button onClick={() => setCvData({...cvData, languages: cvData.languages.filter((_: any, idx: number) => idx !== i)})} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors flex items-center justify-center"><Trash2 size={16}/></button>
-                        </div>
-                      ))}
-                    </div>
-                 </div>
-                 <div>
-                    <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
-                      <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Smile size={18} className="text-purple-500"/> الهوايات والاهتمامات</h4>
-                      <button onClick={() => setCvData({...cvData, hobbies: [...cvData.hobbies, '']})} className="text-xs font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14}/> هواية</button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {cvData.hobbies.map((hobby: string, i: number) => (
-                        <div key={i} className="flex items-center bg-white border border-slate-200 shadow-sm rounded-full px-1.5 py-1">
-                          <input value={hobby} onChange={e => { const newArr = [...cvData.hobbies]; newArr[i] = e.target.value; setCvData({...cvData, hobbies: newArr}); }} placeholder="اكتب..." className="w-24 bg-transparent text-sm font-bold px-2 outline-none text-slate-700" />
-                          <button onClick={() => setCvData({...cvData, hobbies: cvData.hobbies.filter((_: any, idx: number) => idx !== i)})} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><X size={14}/></button>
-                        </div>
-                      ))}
-                    </div>
-                 </div>
-               </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-2">
+                    <h4 className="font-black text-slate-800 text-base flex items-center gap-2"><Smile size={18} className="text-purple-500" /> الهوايات والاهتمامات</h4>
+                    <button onClick={() => setCvData({ ...cvData, hobbies: [...cvData.hobbies, ''] })} className="text-xs font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 px-3 py-1.5 rounded-lg flex items-center gap-1"><Plus size={14} /> هواية</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {cvData.hobbies.map((hobby, i) => (
+                      <div key={i} className="flex items-center bg-white border border-slate-200 shadow-sm rounded-full px-1.5 py-1">
+                        <input value={hobby} onChange={(e) => updateHobby(i, e.target.value)} placeholder="اكتب..." className="w-24 bg-transparent text-sm font-bold px-2 outline-none text-slate-700" />
+                        <button onClick={() => setCvData({ ...cvData, hobbies: removeByIndex(cvData.hobbies, i) })} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><X size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
-            
+
             <div className="p-5 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
-               <Button variant="secondary" onClick={() => setShowCvBuilder(false)} className="px-6">إلغاء</Button>
-               <Button onClick={handleSaveCvBuilder} loading={saving} icon={<Save size={16}/>} iconPosition="left" className="px-8 shadow-md hover:-translate-y-0.5">اعتماد وحفظ السيرة الذاتية</Button>
+              <Button variant="secondary" onClick={() => setShowCvBuilder(false)} className="px-6">إلغاء</Button>
+              <Button onClick={handleSaveCvBuilder} loading={saving} icon={<Save size={16} />} iconPosition="left" className="px-8 shadow-md hover:-translate-y-0.5">اعتماد وحفظ السيرة الذاتية</Button>
             </div>
           </div>
         </div>

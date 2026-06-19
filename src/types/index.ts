@@ -3,80 +3,109 @@
  *  أنواع البيانات الأساسية - نظام الرافدين HR
  *  تم التحديث والتوحيد لحل جميع التضاربات
  * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 إصلاحات هذه النسخة:
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ تنظيف markdown artifacts (روابط مكسورة + HTML entities)
+ *  ✅ cv_data: any → نوع صريح (CvData interface)
+ *  ✅ تعليقات أنظف دون روابط
+ *  ════════════════════════════════════════════════════════════════
  */
 
-// ═══════════════ الأنواع الأساسية ═══════════════
+// ═════════════════ الأنواع الأساسية ═══════════════
 
 export type UserRole = 'employee' | 'hr' | 'admin' | 'gatekeeper' | 'developer' | 'supervisor' | 'manager';
 export type Rank = 'executive' | 'manager' | 'supervisor' | 'employee';
 export type ManufacturingDept = 'syrups' | 'tablets' | 'ointments' | 'powders' | 'management' | 'hr' | 'it';
 export type GatekeeperType = 'employee_movement' | 'visitor_movement' | 'both';
 
-// ═══════════════ واجهة المستخدم الموحدة ═══════════════
+// ═════════════════ بيانات السيرة الذاتية (CV) ═══════════════
+
+/**
+ * بيانات السيرة الذاتية للموظف.
+ * استُخدمت `any` سابقاً → هذا النوع الموحّد يحل محلها بأمان.
+ */
+export interface CvData {
+  education?: string[];
+  experience?: Array<{
+    company?: string;
+    position?: string;
+    period?: string;
+    description?: string;
+  }>;
+  skills?: string[];
+  certifications?: string[];
+  languages?: Array<{ name: string; level: string }>;
+  [key: string]: unknown; // لحقول إضافية مرنة دون اللجوء إلى any
+}
+
+// ═════════════════ واجهة المستخدم الموحدة ═══════════════
 
 export interface User {
   // الهوية الأساسية
-  id: string;                     // Frontend ID (profiles.id أو auth.users.id)
-  user_id?: string;              // Auth ID (للربط مع auth.users)
-  employee_id?: string;          // Backend ID (employees.id)
-  
+  id: string;              // Frontend ID (profiles.id أو auth.users.id)
+  user_id?: string;        // Auth ID (للربط مع auth.users)
+  employee_id?: string;    // Backend ID (employees.id)
+
   // الاسم (دعم كامل للتوافق)
-  full_name: string;             // المعتمد
-  name?: string;                 // للتوافق القديم
-  username?: string;             // للدخول المحلي
-  
+  full_name: string;       // المعتمد
+  name?: string;           // للتوافق القديم
+  username?: string;       // للدخول المحلي
+
   // معلومات الاتصال
   email: string;
   phone?: string | null;
-  
+
   // الوظيفة والمنصب
   role: UserRole;
   rank?: Rank;
   department?: string;
   position?: string;
   manufacturingDept?: ManufacturingDept;
-  
+
   // الصورة (دعم كامل)
   profile_image?: string | null;  // المعتمد
   avatar?: string | null;         // للتوافق القديم
   certificateImage?: string;      // شهادة الموظف
-  
+
   // الموقع والحالة
   location?: string;
   status?: 'active' | 'inactive' | 'on_leave';
-  
+
   // التواريخ (موحدة)
   created_at?: string;
   updated_at?: string;
   joinDate?: string;
- employeeId?: string;
-  
+  employeeId?: string;
+
   // الإدارة والمالية
-  manager?: string;              // ID المدير
+  manager_id?: string;           // ID المدير المباشر
+  supervisor_id?: string;
+  department_manager_id?: string;
+  shift?: string;
   salary?: number;
-  
+
   // الصلاحيات (موحدة)
   permissions?: string[];                        // المعتمد (array)
   custom_permissions?: Record<string, boolean>;  // للتوافق القديم
   can_manage_breaks?: boolean;                   // صلاحية خاصة
-  
+
   // الرمز والأمان
   gatekeeper_type?: GatekeeperType;
-  gatekeeper_pin?: string;       // الرمز السري للحارس (3 أرقام)
-  passcode?: string;             // للدخول المحلي
-  
+  gatekeeper_pin?: string;   // الرمز السري للحارس (3 أرقام)
+  passcode?: string;         // للدخول المحلي
 
   // الإحصائيات والبيانات
   wellnessScore?: number;
   problemsCount?: number;
-  cv_data?: any;
+  cv_data?: CvData;          // ✅ كان any → الآن نوع صريح
 }
 
-// ═══════════════ المشاكل والتعليقات ═══════════════
+// ═════════════════ المشاكل والتعليقات ═══════════════
 
 export type ProblemStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
 export type ProblemSeverity = 'low' | 'medium' | 'high' | 'critical';
-export type ProblemCategory = 'technical' | 'hr' | 'management' | 'workplace' | 'salary' | 'other';
+export type ProblemCategory = 'technical' | 'hr' | 'management' | 'workplace' | 'salary' | 'safety' | 'other';
 
 export interface Problem {
   id: string;
@@ -126,7 +155,7 @@ export interface AIAnalysis {
   predictedResolutionTime: string;
 }
 
-// ═══════════════ الصحة والعافية ═══════════════
+// ═════════════════ الصحة والعافية ═══════════════
 
 export interface WellnessData {
   date: string;
@@ -137,7 +166,7 @@ export interface WellnessData {
   notes?: string;
 }
 
-// ═══════════════ الإشعارات ═══════════════
+// ═════════════════ الإشعارات ═══════════════
 
 export interface Notification {
   id: string;
@@ -150,7 +179,7 @@ export interface Notification {
   recipient_id?: string;
 }
 
-// ═══════════════ الاستبيانات ═══════════════
+// ═════════════════ الاستبيانات ═══════════════
 
 export interface SurveyQuestion {
   id: string;
@@ -169,7 +198,7 @@ export interface Survey {
   isCompleted: boolean;
 }
 
-// ═══════════════ التحليلات والإحصائيات ═══════════════
+// ═════════════════ التحليلات والإحصائيات ═══════════════
 
 export interface DepartmentStats {
   name: string;
@@ -193,7 +222,7 @@ export interface Analytics {
   severityBreakdown: { severity: string; count: number }[];
 }
 
-// ═══════════════ المحادثة والذكاء الاصطناعي ═══════════════
+// ═════════════════ المحادثة والذكاء الاصطناعي ═══════════════
 
 export interface ChatMessage {
   id: string;
@@ -202,7 +231,7 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-// ═══════════════ سجلات التدقيق ═══════════════
+// ═════════════════ سجلات التدقيق ═══════════════
 
 export interface AuditLog {
   id: string;
@@ -215,7 +244,7 @@ export interface AuditLog {
   ipAddress: string;
 }
 
-// ═══════════════ التوافق مع الكود القديم ═══════════════
+// ═════════════════ التوافق مع الكود القديم ═══════════════
 
 /**
  * Employee هو نفسه User - للتوافق مع الكود القديم

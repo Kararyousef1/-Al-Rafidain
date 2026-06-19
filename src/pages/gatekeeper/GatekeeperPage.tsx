@@ -1,7 +1,17 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  صفحة البوابة الكاملة - نظام الرافدين HR
+ *  GatekeeperPage - صفحة بوابة الحارس (نسخة مُصلحة)
  * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة:
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ 13 استخدام any → 0 (أنواع صريحة)
+ *  ✅ تنظيف جميع markdown artifacts
+ *  ✅ إصلاح showToast(`...`) المكسور
+ *  ✅ catch (error: any) → catch (err: unknown) + getErrorMessage (6 مواضع)
+ *  ✅ showToast(... as any) → نوع union صريح
+ *  ✅ arrivalData: any → ArrivalData interface
+ *  ════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect } from 'react';
@@ -10,13 +20,14 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { useUIStore, useAuthStore } from '../../store';
-import { differenceInSeconds, format } from 'date-fns';
+import { differenceInSeconds } from 'date-fns';
 import {
   UserPlus, Users, Clock, LogOut, Edit, Trash2, Search, RefreshCw,
-  AlertTriangle, ArrowRightLeft, CheckCircle, Sun, Moon, BellRing,
-  Shield, Zap, Download, CheckCircle2
+  AlertTriangle, ArrowRightLeft, Sun, Moon, BellRing,
+  Shield,
 } from 'lucide-react';
 import './gatekeeper.css';
+import { getErrorMessage } from '../../lib/errors';
 
 import type {
   GatekeeperSession,
@@ -24,58 +35,73 @@ import type {
   VisitorFormData,
   MovementLog,
   EmployeeBreak,
-  MovementFormData
+  MovementFormData,
 } from '../../types/gatekeeper';
+
+// ════════════════════════════════════════════════════
+// أنواع محلية (تحلّ محل any)
+// ════════════════════════════════════════════════════
+
+interface EmployeeBasic {
+  id: string;
+  full_name?: string;
+  email?: string;
+  department?: string;
+  role?: string;
+}
+
+interface ArrivalData {
+  id: string | number;
+  employee_name?: string;
+  destination: string;
+  notes?: string;
+}
+
+type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+// ════════════════════════════════════════════════════
+// المكون الرئيسي
+// ════════════════════════════════════════════════════
 
 export default function GatekeeperPage() {
   const { user } = useAuthStore();
   const { addToast } = useUIStore();
 
-  // ═══════════════ حالة البيانات ═══════════════
+  // ═════ حالة البيانات ═════
   const [currentSession, setCurrentSession] = useState<GatekeeperSession | null>(null);
   const [visitors, setVisitors] = useState<GatekeeperVisitorLog[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<EmployeeBasic[]>([]);
   const [movements, setMovements] = useState<MovementLog[]>([]);
   const [approvedBreaks, setApprovedBreaks] = useState<EmployeeBreak[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // ═══════════════ حالة النماذج ═══════════════
+  // ═════ حالة النماذج ═════
   const [showModal, setShowModal] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [showArrivalModal, setShowArrivalModal] = useState(false);
   const [editingVisitor, setEditingVisitor] = useState<GatekeeperVisitorLog | null>(null);
-  const [arrivalData, setArrivalData] = useState<any>(null);
+  const [arrivalData, setArrivalData] = useState<ArrivalData | null>(null);
   const [actualLocation, setActualLocation] = useState('عاد لمكان الخروج');
 
-  // ═══════════════ حالة بيانات الوردية ═══════════════
+  // ═════ بيانات الوردية ═════
   const [gkName, setGkName] = useState('');
   const [gkPin, setGkPin] = useState('');
   const [takeoverName, setTakeoverName] = useState('');
   const [takeoverPin, setTakeoverPin] = useState('');
 
-  // ═══════════════ بيانات النماذج ═══════════════
+  // ═════ بيانات النماذج ═════
   const [formData, setFormData] = useState<VisitorFormData>({
-    name: '',
-    phone: '',
-    company: '',
-    purpose: '',
-    notes: '',
-    location: ''
+    name: '', phone: '', company: '', purpose: '', notes: '', location: '',
   });
 
   const [movementForm, setMovementForm] = useState<MovementFormData>({
-    employee_id: '',
-    employee_name: '',
-    department: 'الإنتاج',
-    customDepartment: '',
-    destination: 'الكافتيريا',
-    customDestination: '',
-    notes: ''
+    employee_id: '', employee_name: '', department: 'الإنتاج',
+    customDepartment: '', destination: 'الكافتيريا', customDestination: '', notes: '',
   });
 
-  // ═══════════════ منطق الورديات ═══════════════
+  // ═════ منطق الورديات ═════
   const currentHour = new Date().getHours();
   const isMorningValid = currentHour >= 8 && currentHour < 16;
   const isEveningValid = currentHour >= 16 && currentHour <= 23;
@@ -84,10 +110,11 @@ export default function GatekeeperPage() {
   const initialTab = user?.gatekeeper_type === 'employee_movement' ? 'employees' : 'visitors';
   const [activeTab, setActiveTab] = useState<'visitors' | 'employees'>(initialTab);
 
-  // ═══════════════ التهيئة ═══════════════
+  // ═════ التهيئة ═════
   useEffect(() => {
     initializeSession();
     loadEmployees();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -95,21 +122,13 @@ export default function GatekeeperPage() {
 
     const channel = supabase
       .channel('gatekeeper-changes')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'gatekeeper_visitor_logs' },
-        () => { loadVisitors(currentSession.id); }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gatekeeper_visitor_logs' },
+        () => { if (currentSession.id) loadVisitors(currentSession.id); })
       .subscribe();
 
     const sessionChannel = supabase
       .channel('session-updates')
-      .on('postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'gatekeeper_sessions',
-          filter: `id=eq.${currentSession.id}`
-        },
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'gatekeeper_sessions', filter: `id=eq.${currentSession.id}` },
         (payload) => {
           const newSession = payload.new as GatekeeperSession;
           if (!newSession.is_active) {
@@ -118,14 +137,14 @@ export default function GatekeeperPage() {
           } else {
             setCurrentSession(newSession);
           }
-        }
-      )
+        })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(sessionChannel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id]);
 
   useEffect(() => {
@@ -134,12 +153,9 @@ export default function GatekeeperPage() {
     const checkAutoClose = async () => {
       if (new Date() >= new Date(currentSession.expected_end_time!)) {
         try {
-          await supabase
-            .from('gatekeeper_sessions')
-            .update({ is_active: false, ended_at: new Date().toISOString() })
-            .eq('id', currentSession.id);
+          await supabase.from('gatekeeper_sessions').update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', currentSession.id);
         } catch (e) {
-          console.warn('Auto-close failed:', e);
+          console.warn('Auto-close failed:', getErrorMessage(e));
         }
       }
     };
@@ -149,7 +165,7 @@ export default function GatekeeperPage() {
     return () => clearInterval(interval);
   }, [currentSession?.id, currentSession?.expected_end_time, currentSession?.is_active]);
 
-  // ═══════════════ دوال التحميل ═══════════════
+  // ═════ دوال التحميل ═════
 
   const initializeSession = async () => {
     try {
@@ -157,12 +173,8 @@ export default function GatekeeperPage() {
       setDbError(null);
 
       const { data: activeSession, error } = await supabase
-        .from('gatekeeper_sessions')
-        .select('*')
-        .eq('is_active', true)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .from('gatekeeper_sessions').select('*').eq('is_active', true)
+        .order('started_at', { ascending: false }).limit(1).maybeSingle();
 
       if (error) {
         setDbError('جداول البوابة غير موجودة في قاعدة البيانات');
@@ -170,18 +182,19 @@ export default function GatekeeperPage() {
       }
 
       if (activeSession) {
-        setCurrentSession(activeSession);
-        await loadVisitors(activeSession.id);
-        await loadMovements(activeSession.started_at);
+        const session = activeSession as GatekeeperSession;
+        setCurrentSession(session);
+        await loadVisitors(session.id);
+        await loadMovements(session.started_at);
         showToast('تم استعادة الجلسة النشطة', 'success');
         return;
       }
 
       setCurrentSession(null);
       setVisitors([]);
-    } catch (error: any) {
-      console.error('Error initializing session:', error);
-      setDbError(error.message || 'خطأ في الاتصال بقاعدة البيانات');
+    } catch (err) {
+      console.error('Error initializing session:', getErrorMessage(err));
+      setDbError(getErrorMessage(err, 'خطأ في الاتصال بقاعدة البيانات'));
     } finally {
       setLoading(false);
     }
@@ -189,28 +202,23 @@ export default function GatekeeperPage() {
 
   const loadEmployees = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, department, role');
+      const { data, error } = await supabase.from('profiles').select('id, full_name, email, department, role');
       if (error) throw error;
-      if (data) setEmployees(data);
-    } catch (error) {
-      console.warn('Failed to load employees:', error);
+      if (data) setEmployees(data as EmployeeBasic[]);
+    } catch (err) {
+      console.warn('Failed to load employees:', getErrorMessage(err));
     }
   };
 
   const loadVisitors = async (sessionId: string) => {
     try {
       const { data, error } = await supabase
-        .from('gatekeeper_visitor_logs')
-        .select('*, visitor:gatekeeper_visitors(*)')
-        .eq('session_id', sessionId)
-        .order('check_in_time', { ascending: false });
-
+        .from('gatekeeper_visitor_logs').select('*, visitor:gatekeeper_visitors(*)')
+        .eq('session_id', sessionId).order('check_in_time', { ascending: false });
       if (error) throw error;
-      setVisitors(data || []);
-    } catch (error: any) {
-      console.error('Error loading visitors:', error);
+      setVisitors((data as GatekeeperVisitorLog[]) || []);
+    } catch (err) {
+      console.error('Error loading visitors:', getErrorMessage(err));
       showToast('فشل في تحميل الزوار', 'error');
     }
   };
@@ -219,15 +227,12 @@ export default function GatekeeperPage() {
     if (!sessionStart) return;
     try {
       const { data, error } = await supabase
-        .from('movements_log')
-        .select('*')
-        .gte('departure_at', sessionStart)
+        .from('movements_log').select('*').gte('departure_at', sessionStart)
         .order('departure_at', { ascending: false });
-
-      if (!error && data) setMovements(data);
+      if (!error && data) setMovements(data as MovementLog[]);
       await loadApprovedBreaks();
-    } catch (error) {
-      console.warn('Failed to load movements:', error);
+    } catch (err) {
+      console.warn('Failed to load movements:', getErrorMessage(err));
     }
   };
 
@@ -236,38 +241,28 @@ export default function GatekeeperPage() {
       const { data, error } = await supabase
         .from('employee_breaks')
         .select('*, employee:profiles!employee_breaks_employee_id_fkey(full_name, department)')
-        .in('status', ['approved', 'out'])
-        .order('created_at', { ascending: false });
-
-      if (!error && data) setApprovedBreaks(data);
-    } catch (error) {
-      console.warn('Failed to load approved breaks:', error);
+        .in('status', ['approved', 'out']).order('created_at', { ascending: false });
+      if (!error && data) setApprovedBreaks(data as EmployeeBreak[]);
+    } catch (err) {
+      console.warn('Failed to load approved breaks:', getErrorMessage(err));
     }
   };
 
-  // ═══════════════ دوال الوردية ═══════════════
+  // ═════ دوال الوردية ═════
 
   const handleStartShift = async (shiftType: string, shiftLabel: string) => {
-    if (shiftType === 'morning' && !isMorningValid) {
-      return showToast('لا يمكن فتح الوردية الصباحية الآن', 'error');
-    }
-    if (shiftType === 'evening' && !isEveningValid) {
-      return showToast('لا يمكن فتح الوردية المسائية الآن', 'error');
-    }
-    if (shiftType === 'night' && !isNightValid) {
-      return showToast('لا يمكن فتح الوردية الليلية الآن', 'error');
-    }
+    if (shiftType === 'morning' && !isMorningValid) return showToast('لا يمكن فتح الوردية الصباحية الآن', 'error');
+    if (shiftType === 'evening' && !isEveningValid) return showToast('لا يمكن فتح الوردية المسائية الآن', 'error');
+    if (shiftType === 'night' && !isNightValid) return showToast('لا يمكن فتح الوردية الليلية الآن', 'error');
 
     if (!gkName.trim() || gkPin.length !== 3) {
       showToast('يجب إدخال الاسم والرمز السري من 3 أرقام', 'error');
       return;
     }
-
     if (user?.gatekeeper_pin && gkPin !== user.gatekeeper_pin) {
       showToast('❌ الرمز السري غير صحيح', 'error');
       return;
     }
-
     if (!user?.gatekeeper_pin) {
       showToast('⚠️ لا يوجد رمز حارس مسجل لحسابك، راجع الإدارة', 'error');
       return;
@@ -276,7 +271,7 @@ export default function GatekeeperPage() {
     setLoading(true);
     try {
       const now = new Date();
-      let endTime = new Date(now);
+      const endTime = new Date(now);
 
       if (shiftType === 'morning') {
         endTime.setHours(16, 0, 0, 0);
@@ -292,28 +287,21 @@ export default function GatekeeperPage() {
       const sessionName = `وردية ${shiftLabel} - ${new Date().toLocaleDateString('ar-SA')}`;
 
       const { data: session, error } = await supabase
-        .from('gatekeeper_sessions')
-        .insert({
-          session_name: sessionName,
-          shift_type: shiftType,
-          gatekeeper_name: gkName.trim(),
-          pin_code: gkPin,
-          expected_end_time: endTime.toISOString(),
-          is_active: true,
-          visitor_count: 0,
-          created_by: user?.id
-        })
-        .select()
-        .single();
+        .from('gatekeeper_sessions').insert({
+          session_name: sessionName, shift_type: shiftType, gatekeeper_name: gkName.trim(),
+          pin_code: gkPin, expected_end_time: endTime.toISOString(), is_active: true,
+          visitor_count: 0, created_by: user?.id,
+        }).select().single();
 
       if (error) throw error;
 
-      setCurrentSession(session);
-      await loadMovements(session.started_at);
+      const newSession = session as GatekeeperSession;
+      setCurrentSession(newSession);
+      await loadMovements(newSession.started_at);
       showToast(`تم بدء ${sessionName} بنجاح`, 'success');
-    } catch (error: any) {
-      console.error('Start shift error:', error);
-      showToast('فشل في بدء الوردية', 'error');
+    } catch (err) {
+      console.error('Start shift error:', getErrorMessage(err));
+      showToast('فشل في بدء الوردية: ' + getErrorMessage(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -324,19 +312,14 @@ export default function GatekeeperPage() {
 
     if (currentSession.expected_end_time && new Date() < new Date(currentSession.expected_end_time)) {
       if (!confirm('وقت الوردية لم ينتهِ بعد. هل تريد طلب إنهاء مبكر من الإدارة؟')) return;
-
       setLoading(true);
       try {
-        const { error } = await supabase
-          .from('gatekeeper_sessions')
-          .update({ handover_status: 'pending_end' })
-          .eq('id', currentSession.id);
-
+        const { error } = await supabase.from('gatekeeper_sessions').update({ handover_status: 'pending_end' }).eq('id', currentSession.id);
         if (error) throw error;
         setCurrentSession({ ...currentSession, handover_status: 'pending_end' });
         showToast('تم إرسال طلب الإنهاء المبكر للإدارة', 'success');
       } catch (err) {
-        showToast('فشل في إرسال الطلب', 'error');
+        showToast('فشل في إرسال الطلب: ' + getErrorMessage(err), 'error');
       } finally {
         setLoading(false);
       }
@@ -347,16 +330,12 @@ export default function GatekeeperPage() {
 
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('gatekeeper_sessions')
-        .update({ is_active: false, ended_at: new Date().toISOString() })
-        .eq('id', currentSession.id);
-
+      const { error } = await supabase.from('gatekeeper_sessions').update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', currentSession.id);
       if (error) throw error;
       showToast('تم إغلاق الوردية بنجاح', 'success');
       setCurrentSession(null);
-    } catch (error) {
-      showToast('فشل في إنهاء الوردية', 'error');
+    } catch (err) {
+      showToast('فشل في إنهاء الوردية: ' + getErrorMessage(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -365,19 +344,14 @@ export default function GatekeeperPage() {
   const handleRequestHandover = async () => {
     if (!currentSession) return;
     if (!confirm('هل تريد طلب بديل طارئ؟')) return;
-
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('gatekeeper_sessions')
-        .update({ handover_status: 'pending' })
-        .eq('id', currentSession.id);
-
+      const { error } = await supabase.from('gatekeeper_sessions').update({ handover_status: 'pending' }).eq('id', currentSession.id);
       if (error) throw error;
       setCurrentSession({ ...currentSession, handover_status: 'pending' });
       showToast('تم إرسال الطلب للموارد البشرية', 'success');
     } catch (err) {
-      showToast('فشل إرسال الطلب', 'error');
+      showToast('فشل إرسال الطلب: ' + getErrorMessage(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -385,7 +359,8 @@ export default function GatekeeperPage() {
 
   const handleTakeover = async () => {
     if (!takeoverName.trim() || takeoverPin.length !== 3) return;
-    if (takeoverPin !== currentSession?.temp_pin) {
+    if (!currentSession) return;
+    if (takeoverPin !== currentSession.temp_pin) {
       showToast('الرمز المؤقت غير صحيح!', 'error');
       return;
     }
@@ -393,28 +368,21 @@ export default function GatekeeperPage() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('gatekeeper_sessions')
-        .update({
-          gatekeeper_name: takeoverName.trim(),
-          handover_status: 'completed',
-          temp_pin: null
-        })
-        .eq('id', currentSession!.id)
-        .select()
-        .single();
-
+        .from('gatekeeper_sessions').update({ gatekeeper_name: takeoverName.trim(), handover_status: 'completed', temp_pin: null })
+        .eq('id', currentSession.id).select().single();
       if (error) throw error;
-      setCurrentSession(data);
-      await loadMovements(data.started_at);
+      const newSession = data as GatekeeperSession;
+      setCurrentSession(newSession);
+      await loadMovements(newSession.started_at);
       showToast('تم استلام الوردية بنجاح!', 'success');
     } catch (err) {
-      showToast('حدث خطأ أثناء الاستلام', 'error');
+      showToast('حدث خطأ أثناء الاستلام: ' + getErrorMessage(err), 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // ═══════════════ دوال الزوار ═══════════════
+  // ═════ دوال الزوار ═════
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -425,54 +393,35 @@ export default function GatekeeperPage() {
 
       if (editingVisitor) {
         const { error: updateError } = await supabase
-          .from('gatekeeper_visitors')
-          .update({
-            name: formData.name,
-            phone: formData.phone,
-            company: formData.company,
-            purpose: formData.purpose,
-            notes: formData.notes,
-            location: formData.location,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingVisitor.visitor_id);
-
+          .from('gatekeeper_visitors').update({
+            name: formData.name, phone: formData.phone, company: formData.company,
+            purpose: formData.purpose, notes: formData.notes, location: formData.location,
+            updated_at: new Date().toISOString(),
+          }).eq('id', editingVisitor.visitor_id);
         if (updateError) throw updateError;
         showToast('تم تحديث بيانات الزائر بنجاح', 'success');
       } else {
         const { data: visitor, error: visitorError } = await supabase
-          .from('gatekeeper_visitors')
-          .insert({
-            name: formData.name,
-            phone: formData.phone,
-            company: formData.company,
-            purpose: formData.purpose,
-            notes: formData.notes,
-            location: formData.location
-          })
-          .select()
-          .single();
-
+          .from('gatekeeper_visitors').insert({
+            name: formData.name, phone: formData.phone, company: formData.company,
+            purpose: formData.purpose, notes: formData.notes, location: formData.location,
+          }).select().single();
         if (visitorError) throw visitorError;
 
         const { error: logError } = await supabase
-          .from('gatekeeper_visitor_logs')
-          .insert({
-            session_id: currentSession.id,
-            visitor_id: visitor.id,
-            badge_number: `B${Date.now().toString().slice(-6)}`,
-            status: 'checked_in'
+          .from('gatekeeper_visitor_logs').insert({
+            session_id: currentSession.id, visitor_id: (visitor as { id: string }).id,
+            badge_number: `B${Date.now().toString().slice(-6)}`, status: 'checked_in',
           });
-
         if (logError) throw logError;
         showToast('تم تسجيل الزائر بنجاح', 'success');
       }
 
       await loadVisitors(currentSession.id);
       resetForm();
-    } catch (error: any) {
-      console.error('Error saving visitor:', error);
-      showToast(error.message || 'فشل في حفظ البيانات', 'error');
+    } catch (err) {
+      console.error('Error saving visitor:', getErrorMessage(err));
+      showToast(getErrorMessage(err, 'فشل في حفظ البيانات'), 'error');
     } finally {
       setLoading(false);
     }
@@ -480,68 +429,47 @@ export default function GatekeeperPage() {
 
   const handleCheckout = async (log: GatekeeperVisitorLog) => {
     if (!confirm('هل أنت متأكد من تسجيل خروج هذا الزائر؟')) return;
-
     try {
       const { error } = await supabase
-        .from('gatekeeper_visitor_logs')
-        .update({
-          check_out_time: new Date().toISOString(),
-          status: 'checked_out'
-        })
+        .from('gatekeeper_visitor_logs').update({ check_out_time: new Date().toISOString(), status: 'checked_out' })
         .eq('id', log.id);
-
       if (error) throw error;
-      await loadVisitors(currentSession!.id);
+      if (currentSession) await loadVisitors(currentSession.id);
       showToast('تم تسجيل الخروج بنجاح', 'success');
-    } catch (error: any) {
-      showToast('فشل في تسجيل الخروج', 'error');
+    } catch (err) {
+      showToast('فشل في تسجيل الخروج: ' + getErrorMessage(err), 'error');
     }
   };
 
   const handleEdit = (log: GatekeeperVisitorLog) => {
     setEditingVisitor(log);
     setFormData({
-      name: log.visitor?.name || '',
-      phone: log.visitor?.phone || '',
-      company: log.visitor?.company || '',
-      purpose: log.visitor?.purpose || '',
-      notes: log.visitor?.notes || '',
-      location: log.visitor?.location || ''
+      name: log.visitor?.name || '', phone: log.visitor?.phone || '',
+      company: log.visitor?.company || '', purpose: log.visitor?.purpose || '',
+      notes: log.visitor?.notes || '', location: log.visitor?.location || '',
     });
     setShowModal(true);
   };
 
   const handleDelete = async (log: GatekeeperVisitorLog) => {
     if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return;
-
     try {
-      const { error } = await supabase
-        .from('gatekeeper_visitor_logs')
-        .delete()
-        .eq('id', log.id);
-
+      const { error } = await supabase.from('gatekeeper_visitor_logs').delete().eq('id', log.id);
       if (error) throw error;
-      await loadVisitors(currentSession!.id);
+      if (currentSession) await loadVisitors(currentSession.id);
       showToast('تم حذف السجل بنجاح', 'success');
-    } catch (error: any) {
-      showToast('فشل في حذف السجل', 'error');
+    } catch (err) {
+      showToast('فشل في حذف السجل: ' + getErrorMessage(err), 'error');
     }
   };
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      phone: '',
-      company: '',
-      purpose: '',
-      notes: '',
-      location: ''
-    });
+    setFormData({ name: '', phone: '', company: '', purpose: '', notes: '', location: '' });
     setEditingVisitor(null);
     setShowModal(false);
   };
 
-  // ═══════════════ دوال الحركة ═══════════════
+  // ═════ دوال الحركة ═════
 
   const handleMovementSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -552,56 +480,33 @@ export default function GatekeeperPage() {
 
     try {
       setLoading(true);
-      const finalDestination = movementForm.destination === 'مخصص'
-        ? movementForm.customDestination
-        : movementForm.destination;
-      const finalDepartment = movementForm.department === 'مخصص'
-        ? movementForm.customDepartment
-        : movementForm.department;
+      const finalDestination = movementForm.destination === 'مخصص' ? movementForm.customDestination : movementForm.destination;
+      const finalDepartment = movementForm.department === 'مخصص' ? movementForm.customDepartment : movementForm.department;
 
-      const approvedBreak = approvedBreaks.find(
-        b => b.employee_id === movementForm.employee_id && b.status === 'approved'
-      );
+      const approvedBreak = approvedBreaks.find((b) => b.employee_id === movementForm.employee_id && b.status === 'approved');
 
       const notes = approvedBreak
         ? `[تصريح من المشرف: ${approvedBreak.supervisor_name}] ${movementForm.notes}`
         : `[بدون تصريح خروج] ${movementForm.notes}`;
 
-      const { error } = await supabase
-        .from('movements_log')
-        .insert({
-          employee_id: movementForm.employee_id,
-          employee_name: movementForm.employee_name,
-          department: finalDepartment,
-          destination: finalDestination,
-          notes,
-          logged_by_id: user?.id,
-          departure_at: new Date().toISOString()
-        });
+      const { error } = await supabase.from('movements_log').insert({
+        employee_id: movementForm.employee_id, employee_name: movementForm.employee_name,
+        department: finalDepartment, destination: finalDestination, notes,
+        logged_by_id: user?.id, departure_at: new Date().toISOString(),
+      });
 
       if (error) throw error;
 
       if (approvedBreak) {
-        await supabase
-          .from('employee_breaks')
-          .update({ status: 'out', out_time: new Date().toISOString() })
-          .eq('id', approvedBreak.id);
+        await supabase.from('employee_breaks').update({ status: 'out', out_time: new Date().toISOString() }).eq('id', approvedBreak.id);
       }
 
       showToast('تم تسجيل خروج الموظف بنجاح', 'success');
       setShowMovementModal(false);
-      setMovementForm({
-        employee_id: '',
-        employee_name: '',
-        department: 'الإنتاج',
-        customDepartment: '',
-        destination: 'الكافتيريا',
-        customDestination: '',
-        notes: ''
-      });
+      setMovementForm({ employee_id: '', employee_name: '', department: 'الإنتاج', customDepartment: '', destination: 'الكافتيريا', customDestination: '', notes: '' });
       await loadMovements(currentSession?.started_at);
-    } catch (error: any) {
-      showToast(error.message || 'فشل في تسجيل الحركة', 'error');
+    } catch (err) {
+      showToast(getErrorMessage(err, 'فشل في تسجيل الحركة'), 'error');
     } finally {
       setLoading(false);
     }
@@ -623,30 +528,23 @@ export default function GatekeeperPage() {
         notes = `${notes} | [تأكيد وصول] وصل إلى (${actualLocation})`;
       }
 
-      const { error } = await supabase
-        .from('movements_log')
-        .update({ returned_at: new Date().toISOString(), notes })
-        .eq('id', arrivalData.id);
-
+      const { error } = await supabase.from('movements_log').update({ returned_at: new Date().toISOString(), notes }).eq('id', arrivalData.id);
       if (error) throw error;
 
-      showToast(
-        isViolation ? 'تم رصد مخالفة مسار وتسجيل الوصول' : 'تم تسجيل الوصول بنجاح',
-        isViolation ? 'warning' : 'success'
-      );
+      showToast(isViolation ? 'تم رصد مخالفة مسار وتسجيل الوصول' : 'تم تسجيل الوصول بنجاح', isViolation ? 'warning' : 'success');
       setShowArrivalModal(false);
       await loadMovements(currentSession.started_at);
-    } catch (error) {
-      showToast('فشل في تسجيل الوصول', 'error');
+    } catch (err) {
+      showToast('فشل في تسجيل الوصول: ' + getErrorMessage(err), 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // ═══════════════ دوال مساعدة ═══════════════
+  // ═════ دوال مساعدة ═════
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning') => {
-    addToast(message, type as any);
+  const showToast = (message: string, type: ToastType) => {
+    addToast(message, type);
   };
 
   const calculateDuration = (departure: string, returned: string | null) => {
@@ -660,19 +558,19 @@ export default function GatekeeperPage() {
     return `${hours} ساعة${minutes > 0 ? ` و ${minutes} دقيقة` : ''}`;
   };
 
-  const filteredVisitors = visitors.filter(log =>
-    log.visitor?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.visitor?.phone.includes(searchTerm) ||
+  const filteredVisitors = visitors.filter((log) =>
+    log.visitor?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    log.visitor?.phone?.includes(searchTerm) ||
     log.visitor?.company?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredMovements = movements.filter(m => {
-    const emp = employees.find(e => e.id === m.employee_id);
+  const filteredMovements = movements.filter((m) => {
+    const emp = employees.find((e) => e.id === m.employee_id);
     const empName = emp?.full_name || m.employee_name || '';
     return empName.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
-  // ═══════════════ Loading State ═══════════════
+  // ═════ Loading State ═════
   if (loading && !currentSession) {
     return (
       <div className="page-container flex items-center justify-center min-h-screen">
@@ -684,7 +582,7 @@ export default function GatekeeperPage() {
     );
   }
 
-  // ═══════════════ Database Error ═══════════════
+  // ═════ Database Error ═════
   if (dbError && !currentSession) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -693,17 +591,14 @@ export default function GatekeeperPage() {
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-red-700 mb-2">تعذر بدء جلسة البوابة</h3>
             <p className="text-red-600 mb-4">{dbError}</p>
-            <Button onClick={initializeSession}>
-              <RefreshCw className="w-4 h-4 ml-2 inline-block" />
-              إعادة المحاولة
-            </Button>
+            <Button onClick={initializeSession}><RefreshCw className="w-4 h-4 ml-2 inline-block" /> إعادة المحاولة</Button>
           </div>
         </Card>
       </div>
     );
   }
 
-  // ═══════════════ شاشة بدء الوردية ═══════════════
+  // ═════ شاشة بدء الوردية ═════
   if (!currentSession && !dbError && !loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -714,62 +609,27 @@ export default function GatekeeperPage() {
             <p className="text-slate-500 mb-8">يجب بدء وردية جديدة للتمكن من تسجيل حركة الزوار والموظفين.</p>
 
             <div className="flex gap-4 max-w-sm mx-auto mb-8">
-              <Input
-                placeholder="اسم الحارس..."
-                value={gkName}
-                onChange={e => setGkName(e.target.value)}
-              />
-              <Input
-                placeholder="الرمز (3 أرقام)"
-                type="password"
-                maxLength={3}
-                value={gkPin}
-                onChange={e => setGkPin(e.target.value.replace(/\D/g, ''))}
-              />
+              <Input placeholder="اسم الحارس..." value={gkName} onChange={(e) => setGkName(e.target.value)} />
+              <Input placeholder="الرمز (3 أرقام)" type="password" maxLength={3} value={gkPin} onChange={(e) => setGkPin(e.target.value.replace(/\D/g, ''))} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <button
-                disabled={!isMorningValid}
-                onClick={() => handleStartShift('morning', 'صباحي')}
-                className={`group p-6 rounded-2xl border-2 transition-all text-center ${
-                  isMorningValid
-                    ? 'border-slate-100 hover:border-amber-400 hover:bg-amber-50 cursor-pointer'
-                    : 'border-slate-100 opacity-50 bg-slate-50 cursor-not-allowed'
-                }`}
-              >
+              <button disabled={!isMorningValid} onClick={() => handleStartShift('morning', 'صباحي')}
+                className={`group p-6 rounded-2xl border-2 transition-all text-center ${isMorningValid ? 'border-slate-100 hover:border-amber-400 hover:bg-amber-50 cursor-pointer' : 'border-slate-100 opacity-50 bg-slate-50 cursor-not-allowed'}`}>
                 <Sun className={`w-10 h-10 mx-auto mb-3 ${isMorningValid ? 'text-amber-500' : 'text-slate-400'}`} />
                 <h3 className="font-bold text-slate-800 mb-1">الوردية الصباحية</h3>
                 <p className="text-xs text-slate-500">08:00 ص - 04:00 م</p>
               </button>
-
-              <button
-                disabled={!isEveningValid}
-                onClick={() => handleStartShift('evening', 'مسائي')}
-                className={`group p-6 rounded-2xl border-2 transition-all text-center ${
-                  isEveningValid
-                    ? 'border-slate-100 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer'
-                    : 'border-slate-100 opacity-50 bg-slate-50 cursor-not-allowed'
-                }`}
-              >
+              <button disabled={!isEveningValid} onClick={() => handleStartShift('evening', 'مسائي')}
+                className={`group p-6 rounded-2xl border-2 transition-all text-center ${isEveningValid ? 'border-slate-100 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer' : 'border-slate-100 opacity-50 bg-slate-50 cursor-not-allowed'}`}>
                 <Clock className={`w-10 h-10 mx-auto mb-3 ${isEveningValid ? 'text-indigo-500' : 'text-slate-400'}`} />
                 <h3 className="font-bold text-slate-800 mb-1">الوردية المسائية</h3>
                 <p className="text-xs text-slate-500">04:00 م - 12:00 ص</p>
               </button>
-
-              <button
-                disabled={!isNightValid}
-                onClick={() => handleStartShift('night', 'ليلي')}
-                className={`group p-6 rounded-2xl border-2 transition-all text-center ${
-                  isNightValid
-                    ? 'border-slate-100 hover:border-slate-800 hover:bg-slate-900 cursor-pointer'
-                    : 'border-slate-100 opacity-50 bg-slate-50 cursor-not-allowed'
-                }`}
-              >
+              <button disabled={!isNightValid} onClick={() => handleStartShift('night', 'ليلي')}
+                className={`group p-6 rounded-2xl border-2 transition-all text-center ${isNightValid ? 'border-slate-100 hover:border-slate-800 hover:bg-slate-900 cursor-pointer' : 'border-slate-100 opacity-50 bg-slate-50 cursor-not-allowed'}`}>
                 <Moon className={`w-10 h-10 mx-auto mb-3 ${isNightValid ? 'text-slate-700' : 'text-slate-400'}`} />
-                <h3 className={`font-bold mb-1 ${isNightValid ? 'text-slate-800' : 'text-slate-500'}`}>
-                  الوردية الليلية
-                </h3>
+                <h3 className={`font-bold mb-1 ${isNightValid ? 'text-slate-800' : 'text-slate-500'}`}>الوردية الليلية</h3>
                 <p className="text-xs text-slate-500">12:00 ص - 08:00 ص</p>
               </button>
             </div>
@@ -779,10 +639,9 @@ export default function GatekeeperPage() {
     );
   }
 
-  // ═══════════════ الواجهة الرئيسية ═══════════════
+  // ═════ الواجهة الرئيسية ═════
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6">
-
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">🚪 نظام إدارة البوابة</h1>
@@ -794,19 +653,12 @@ export default function GatekeeperPage() {
         <Card className="mb-6 bg-gradient-to-br from-indigo-600 to-purple-700 text-white">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="bg-white/20 p-3 rounded-xl">
-                <Shield className="w-6 h-6" />
-              </div>
+              <div className="bg-white/20 p-3 rounded-xl"><Shield className="w-6 h-6" /></div>
               <div>
                 <h3 className="font-bold text-lg">{currentSession.session_name}</h3>
                 <p className="text-white/90 text-sm mt-1">الحارس: {currentSession.gatekeeper_name}</p>
                 <p className="text-white/70 text-xs mt-0.5">
-                  ينتهي الدوام: {currentSession.expected_end_time
-                    ? new Date(currentSession.expected_end_time).toLocaleTimeString('ar-SA', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })
-                    : 'غير محدد'}
+                  ينتهي الدوام: {currentSession.expected_end_time ? new Date(currentSession.expected_end_time).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : 'غير محدد'}
                 </p>
               </div>
             </div>
@@ -816,27 +668,16 @@ export default function GatekeeperPage() {
                 <div className="text-sm text-white/80">زائر اليوم</div>
               </div>
               <div className="flex flex-col gap-2">
-                <Button
-                  onClick={() => loadVisitors(currentSession.id)}
-                  className="!bg-white/20 !text-white hover:!bg-white/30 !border-none"
-                >
+                <Button onClick={() => currentSession.id && loadVisitors(currentSession.id)} className="!bg-white/20 !text-white hover:!bg-white/30 !border-none">
                   <RefreshCw className="w-4 h-4 ml-1" /> تحديث
                 </Button>
                 <div className="flex gap-2">
-                  <Button
-                    onClick={handleRequestHandover}
-                    className="!bg-amber-500 hover:!bg-amber-600 !text-white !border-none text-xs"
-                  >
+                  <Button onClick={handleRequestHandover} className="!bg-amber-500 hover:!bg-amber-600 !text-white !border-none text-xs">
                     <ArrowRightLeft className="w-3 h-3 ml-1" /> بديل طارئ
                   </Button>
-                  <Button
-                    onClick={handleEndShift}
-                    className="!bg-red-500 hover:!bg-red-600 !text-white !border-none text-xs"
-                  >
+                  <Button onClick={handleEndShift} className="!bg-red-500 hover:!bg-red-600 !text-white !border-none text-xs">
                     <LogOut className="w-3 h-3 ml-1" />
-                    {currentSession.expected_end_time && new Date() < new Date(currentSession.expected_end_time)
-                      ? 'طلب إنهاء'
-                      : 'إنهاء الوردية'}
+                    {currentSession.expected_end_time && new Date() < new Date(currentSession.expected_end_time) ? 'طلب إنهاء' : 'إنهاء الوردية'}
                   </Button>
                 </div>
               </div>
@@ -864,22 +705,10 @@ export default function GatekeeperPage() {
             <h2 className="text-2xl font-extrabold text-indigo-800 mb-2">استلام الوردية</h2>
             <p className="text-indigo-600 mb-8">أدخل اسمك والرمز المؤقت من الموارد البشرية.</p>
             <div className="flex gap-3 max-w-sm mx-auto mb-6">
-              <Input
-                placeholder="اسم الحارس البديل"
-                value={takeoverName}
-                onChange={e => setTakeoverName(e.target.value)}
-              />
-              <Input
-                placeholder="الرمز المؤقت"
-                type="password"
-                maxLength={3}
-                value={takeoverPin}
-                onChange={e => setTakeoverPin(e.target.value.replace(/\D/g, ''))}
-              />
+              <Input placeholder="اسم الحارس البديل" value={takeoverName} onChange={(e) => setTakeoverName(e.target.value)} />
+              <Input placeholder="الرمز المؤقت" type="password" maxLength={3} value={takeoverPin} onChange={(e) => setTakeoverPin(e.target.value.replace(/\D/g, ''))} />
             </div>
-            <Button onClick={handleTakeover} disabled={loading}>
-              تأكيد واستلام الوردية
-            </Button>
+            <Button onClick={handleTakeover} disabled={loading}>تأكيد واستلام الوردية</Button>
           </Card>
         </div>
       )}
@@ -896,305 +725,148 @@ export default function GatekeeperPage() {
       )}
 
       {/* الواجهة الرئيسية */}
-      {currentSession &&
-        currentSession.handover_status !== 'pending' &&
-        currentSession.handover_status !== 'approved' &&
-        currentSession.handover_status !== 'pending_end' && (
-          <>
-            {/* أزرار التبويب */}
-            <div className="flex gap-2 sm:gap-4 mb-6 border-b border-gray-200 pb-4 overflow-x-auto hide-scrollbar">
-              {(user?.gatekeeper_type === 'both' || !user?.gatekeeper_type || user?.gatekeeper_type === 'visitor_movement') && (
-                <button
-                  onClick={() => setActiveTab('visitors')}
-                  className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
-                    activeTab === 'visitors'
-                      ? 'bg-indigo-600 text-white shadow-lg'
-                      : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'
-                  }`}
-                >
-                  <Users className="w-5 h-5 inline-block ml-2" />
-                  زوار البوابة
-                </button>
-              )}
-              {(user?.gatekeeper_type === 'both' || !user?.gatekeeper_type || user?.gatekeeper_type === 'employee_movement') && (
-                <button
-                  onClick={() => setActiveTab('employees')}
-                  className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
-                    activeTab === 'employees'
-                      ? 'bg-indigo-600 text-white shadow-lg'
-                      : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'
-                  }`}
-                >
-                  <ArrowRightLeft className="w-5 h-5 inline-block ml-2" />
-                  حركة الموظفين
-                </button>
-              )}
-            </div>
+      {currentSession && currentSession.handover_status !== 'pending' && currentSession.handover_status !== 'approved' && currentSession.handover_status !== 'pending_end' && (
+        <>
+          {/* أزرار التبويب */}
+          <div className="flex gap-2 sm:gap-4 mb-6 border-b border-gray-200 pb-4 overflow-x-auto hide-scrollbar">
+            {(user?.gatekeeper_type === 'both' || !user?.gatekeeper_type || user?.gatekeeper_type === 'visitor_movement') && (
+              <button onClick={() => setActiveTab('visitors')}
+                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeTab === 'visitors' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'}`}>
+                <Users className="w-5 h-5 inline-block ml-2" /> زوار البوابة
+              </button>
+            )}
+            {(user?.gatekeeper_type === 'both' || !user?.gatekeeper_type || user?.gatekeeper_type === 'employee_movement') && (
+              <button onClick={() => setActiveTab('employees')}
+                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeTab === 'employees' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-200'}`}>
+                <ArrowRightLeft className="w-5 h-5 inline-block ml-2" /> حركة الموظفين
+              </button>
+            )}
+          </div>
 
-            {/* قسم زوار البوابة */}
-            {activeTab === 'visitors' && (
-              <>
-                <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
-                  <div className="relative flex-1 w-full sm:max-w-md">
-                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      placeholder="بحث بالاسم أو الهاتف أو الشركة..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      className="pr-10"
-                    />
-                  </div>
-                  <Button onClick={() => setShowModal(true)} className="btn-primary">
-                    <UserPlus className="w-5 h-5 ml-1" />
-                    تسجيل زائر
-                  </Button>
+          {/* قسم زوار البوابة */}
+          {activeTab === 'visitors' && (
+            <>
+              <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+                <div className="relative flex-1 w-full sm:max-w-md">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input placeholder="بحث بالاسم أو الهاتف أو الشركة..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pr-10" />
                 </div>
+                <Button onClick={() => setShowModal(true)} className="btn-primary"><UserPlus className="w-5 h-5 ml-1" /> تسجيل زائر</Button>
+              </div>
 
-                <Card>
-                  <div className="overflow-x-auto">
-                    <table className="w-full whitespace-nowrap">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          <th className="table-header">#</th>
-                          <th className="table-header">الاسم</th>
-                          <th className="table-header">الهاتف</th>
-                          <th className="table-header">الشركة</th>
-                          <th className="table-header">الغرض</th>
-                          <th className="table-header">الموقع</th>
-                          <th className="table-header">وقت الدخول</th>
-                          <th className="table-header">الحالة</th>
-                          <th className="table-header">إجراءات</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredVisitors.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="text-center py-12">
-                              <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                              <p className="text-gray-500">لا توجد سجلات حتى الآن</p>
+              <Card>
+                <div className="overflow-x-auto">
+                  <table className="w-full whitespace-nowrap">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="table-header">#</th><th className="table-header">الاسم</th><th className="table-header">الهاتف</th>
+                        <th className="table-header">الشركة</th><th className="table-header">الغرض</th><th className="table-header">الموقع</th>
+                        <th className="table-header">وقت الدخول</th><th className="table-header">الحالة</th><th className="table-header">إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredVisitors.length === 0 ? (
+                        <tr><td colSpan={9} className="text-center py-12"><Users className="w-16 h-16 mx-auto mb-4 text-gray-300" /><p className="text-gray-500">لا توجد سجلات حتى الآن</p></td></tr>
+                      ) : (
+                        filteredVisitors.map((log, index) => (
+                          <tr key={log.id} className="table-row">
+                            <td className="table-cell">{index + 1}</td>
+                            <td className="table-cell font-medium">{log.visitor?.name}</td>
+                            <td className="table-cell">{log.visitor?.phone}</td>
+                            <td className="table-cell">{log.visitor?.company || '-'}</td>
+                            <td className="table-cell">{log.visitor?.purpose || '-'}</td>
+                            <td className="table-cell">{log.visitor?.location || '-'}</td>
+                            <td className="table-cell"><div className="flex items-center gap-2"><Clock className="w-4 h-4 text-gray-400" />{new Date(log.check_in_time).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</div></td>
+                            <td className="table-cell">{log.status === 'checked_in' ? <span className="badge-success">✓ داخل المبنى</span> : <span className="badge-gray">⊗ خرج</span>}</td>
+                            <td className="table-cell">
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => handleEdit(log)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل"><Edit className="w-4 h-4 text-blue-600" /></button>
+                                {log.status === 'checked_in' && <button onClick={() => handleCheckout(log)} className="p-2 hover:bg-orange-50 rounded-lg transition-colors" title="تسجيل خروج"><LogOut className="w-4 h-4 text-orange-600" /></button>}
+                                <button onClick={() => handleDelete(log)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="حذف"><Trash2 className="w-4 h-4 text-red-600" /></button>
+                              </div>
                             </td>
                           </tr>
-                        ) : (
-                          filteredVisitors.map((log, index) => (
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          )}
+
+          {/* قسم حركة الموظفين */}
+          {activeTab === 'employees' && (
+            <>
+              <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+                <div className="relative flex-1 w-full sm:max-w-md">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input placeholder="بحث باسم الموظف..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pr-10" />
+                </div>
+                <Button onClick={() => setShowMovementModal(true)} className="btn-primary"><UserPlus className="w-5 h-5 ml-1" /> تسجيل خروج موظف</Button>
+              </div>
+
+              <Card>
+                <div className="overflow-x-auto">
+                  <table className="w-full whitespace-nowrap">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="table-header">#</th><th className="table-header">اسم الموظف</th><th className="table-header">القسم</th>
+                        <th className="table-header">الوجهة</th><th className="table-header">التصريح</th><th className="table-header">وقت الخروج</th>
+                        <th className="table-header">وقت العودة</th><th className="table-header">المدة</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMovements.length === 0 ? (
+                        <tr><td colSpan={8} className="text-center py-12"><ArrowRightLeft className="w-16 h-16 mx-auto mb-4 text-gray-300" /><p className="text-gray-500">لا توجد حركات خروج اليوم</p></td></tr>
+                      ) : (
+                        filteredMovements.map((log, index) => {
+                          const emp = employees.find((e) => e.id === log.employee_id);
+                          const isApproved = log.notes?.includes('[تصريح من المشرف:');
+                          return (
                             <tr key={log.id} className="table-row">
                               <td className="table-cell">{index + 1}</td>
-                              <td className="table-cell font-medium">{log.visitor?.name}</td>
-                              <td className="table-cell">{log.visitor?.phone}</td>
-                              <td className="table-cell">{log.visitor?.company || '-'}</td>
-                              <td className="table-cell">{log.visitor?.purpose || '-'}</td>
-                              <td className="table-cell">{log.visitor?.location || '-'}</td>
+                              <td className="table-cell font-bold">{emp?.full_name || log.employee_name || 'غير معروف'}</td>
+                              <td className="table-cell">{log.department || '-'}</td>
+                              <td className="table-cell"><span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold">{log.destination}</span></td>
+                              <td className="table-cell">{isApproved ? <span className="badge-success">✓ مصرح</span> : <span className="badge-gray">بدون تصريح</span>}</td>
+                              <td className="table-cell">{new Date(log.departure_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</td>
                               <td className="table-cell">
-                                <div className="flex items-center gap-2">
-                                  <Clock className="w-4 h-4 text-gray-400" />
-                                  {new Date(log.check_in_time).toLocaleTimeString('ar-SA', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </div>
-                              </td>
-                              <td className="table-cell">
-                                {log.status === 'checked_in' ? (
-                                  <span className="badge-success">✓ داخل المبنى</span>
+                                {log.returned_at ? (
+                                  <span className="text-emerald-600 font-bold">{new Date(log.returned_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
                                 ) : (
-                                  <span className="badge-gray">⊗ خرج</span>
+                                  <Button size="sm" variant="outline" onClick={() => { setArrivalData({ id: log.id, employee_name: log.employee_name, destination: log.destination, notes: log.notes }); setActualLocation('عاد لمكان الخروج'); setShowArrivalModal(true); }} className="text-xs">تسجيل عودة</Button>
                                 )}
                               </td>
-                              <td className="table-cell">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handleEdit(log)}
-                                    className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="تعديل"
-                                  >
-                                    <Edit className="w-4 h-4 text-blue-600" />
-                                  </button>
-                                  {log.status === 'checked_in' && (
-                                    <button
-                                      onClick={() => handleCheckout(log)}
-                                      className="p-2 hover:bg-orange-50 rounded-lg transition-colors"
-                                      title="تسجيل خروج"
-                                    >
-                                      <LogOut className="w-4 h-4 text-orange-600" />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleDelete(log)}
-                                    className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="حذف"
-                                  >
-                                    <Trash2 className="w-4 h-4 text-red-600" />
-                                  </button>
-                                </div>
-                              </td>
+                              <td className="table-cell font-bold">{calculateDuration(log.departure_at, log.returned_at ?? null)}</td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
-              </>
-            )}
-
-            {/* قسم حركة الموظفين */}
-            {activeTab === 'employees' && (
-              <>
-                <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
-                  <div className="relative flex-1 w-full sm:max-w-md">
-                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <Input
-                      placeholder="بحث باسم الموظف..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      className="pr-10"
-                    />
-                  </div>
-                  <Button onClick={() => setShowMovementModal(true)} className="btn-primary">
-                    <UserPlus className="w-5 h-5 ml-1" />
-                    تسجيل خروج موظف
-                  </Button>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-
-                <Card>
-                  <div className="overflow-x-auto">
-                    <table className="w-full whitespace-nowrap">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          <th className="table-header">#</th>
-                          <th className="table-header">اسم الموظف</th>
-                          <th className="table-header">القسم</th>
-                          <th className="table-header">الوجهة</th>
-                          <th className="table-header">التصريح</th>
-                          <th className="table-header">وقت الخروج</th>
-                          <th className="table-header">وقت العودة</th>
-                          <th className="table-header">المدة</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredMovements.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="text-center py-12">
-                              <ArrowRightLeft className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                              <p className="text-gray-500">لا توجد حركات خروج اليوم</p>
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredMovements.map((log, index) => {
-                            const emp = employees.find(e => e.id === log.employee_id);
-                            const isApproved = log.notes?.includes('[تصريح من المشرف:');
-                            return (
-                              <tr key={log.id} className="table-row">
-                                <td className="table-cell">{index + 1}</td>
-                                <td className="table-cell font-bold">
-                                  {emp?.full_name || log.employee_name || 'غير معروف'}
-                                </td>
-                                <td className="table-cell">{log.department || '-'}</td>
-                                <td className="table-cell">
-                                  <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold">
-                                    {log.destination}
-                                  </span>
-                                </td>
-                                <td className="table-cell">
-                                  {isApproved ? (
-                                    <span className="badge-success">✓ مصرح</span>
-                                  ) : (
-                                    <span className="badge-gray">بدون تصريح</span>
-                                  )}
-                                </td>
-                                <td className="table-cell">
-                                  {new Date(log.departure_at).toLocaleTimeString('ar-SA', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </td>
-                                <td className="table-cell">
-                                  {log.returned_at ? (
-                                    <span className="text-emerald-600 font-bold">
-                                      {new Date(log.returned_at).toLocaleTimeString('ar-SA', {
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                      })}
-                                    </span>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setArrivalData(log);
-                                        setActualLocation('عاد لمكان الخروج');
-                                        setShowArrivalModal(true);
-                                      }}
-                                      className="text-xs"
-                                    >
-                                      تسجيل عودة
-                                    </Button>
-                                  )}
-                                </td>
-                                <td className="table-cell font-bold">
-                                  {calculateDuration(log.departure_at, log.returned_at ?? null)}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
-              </>
-            )}
-          </>
-        )}
+              </Card>
+            </>
+          )}
+        </>
+      )}
 
       {/* Modal تسجيل زائر */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">
-              {editingVisitor ? '✏️ تعديل بيانات الزائر' : '➕ تسجيل زائر جديد'}
-            </h3>
+            <h3 className="text-lg font-bold mb-4">{editingVisitor ? '✏️ تعديل بيانات الزائر' : '➕ تسجيل زائر جديد'}</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <Input
-                required
-                placeholder="الاسم الكامل"
-                value={formData.name}
-                onChange={e => setFormData({ ...formData, name: e.target.value })}
-              />
-              <Input
-                required
-                placeholder="رقم الهاتف"
-                type="tel"
-                value={formData.phone}
-                onChange={e => setFormData({ ...formData, phone: e.target.value })}
-              />
-              <Input
-                placeholder="الشركة / الجهة"
-                value={formData.company}
-                onChange={e => setFormData({ ...formData, company: e.target.value })}
-              />
-              <Input
-                placeholder="الغرض من الزيارة"
-                value={formData.purpose}
-                onChange={e => setFormData({ ...formData, purpose: e.target.value })}
-              />
-              <Input
-                placeholder="الموقع / الوجهة"
-                value={formData.location}
-                onChange={e => setFormData({ ...formData, location: e.target.value })}
-              />
-              <textarea
-                placeholder="ملاحظات إضافية"
-                value={formData.notes}
-                onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                className="input-field min-h-[80px] resize-y w-full"
-              />
+              <Input required placeholder="الاسم الكامل" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+              <Input required placeholder="رقم الهاتف" type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+              <Input placeholder="الشركة / الجهة" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} />
+              <Input placeholder="الغرض من الزيارة" value={formData.purpose} onChange={(e) => setFormData({ ...formData, purpose: e.target.value })} />
+              <Input placeholder="الموقع / الوجهة" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
+              <textarea placeholder="ملاحظات إضافية" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="input-field min-h-[80px] resize-y w-full" />
               <div className="flex gap-3">
-                <Button type="submit" disabled={loading} className="flex-1">
-                  {loading ? 'جاري الحفظ...' : editingVisitor ? '💾 حفظ التعديلات' : '✓ تسجيل الزائر'}
-                </Button>
-                <Button type="button" variant="secondary" onClick={resetForm} className="flex-1">
-                  إلغاء
-                </Button>
+                <Button type="submit" disabled={loading} className="flex-1">{loading ? 'جاري الحفظ...' : editingVisitor ? '💾 حفظ التعديلات' : '✓ تسجيل الزائر'}</Button>
+                <Button type="button" variant="secondary" onClick={resetForm} className="flex-1">إلغاء</Button>
               </div>
             </form>
           </div>
@@ -1209,34 +881,15 @@ export default function GatekeeperPage() {
             <form onSubmit={handleMovementSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">اسم الموظف *</label>
-                <input
-                  type="text"
-                  required
-                  list="employees-list"
-                  placeholder="ابحث عن الموظف..."
-                  value={movementForm.employee_name}
-                  onChange={e => {
+                <input type="text" required list="employees-list" placeholder="ابحث عن الموظف..." value={movementForm.employee_name}
+                  onChange={(e) => {
                     const val = e.target.value;
-                    const emp = employees.find(em => em.full_name === val);
-                    setMovementForm({
-                      ...movementForm,
-                      employee_name: val,
-                      employee_id: emp ? emp.id : '',
-                      department: emp?.department || movementForm.department
-                    });
+                    const emp = employees.find((em) => em.full_name === val);
+                    setMovementForm({ ...movementForm, employee_name: val, employee_id: emp ? emp.id : '', department: emp?.department || movementForm.department });
                   }}
-                  className={`w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all ${
-                    movementForm.employee_name
-                      ? movementForm.employee_id
-                        ? 'border-emerald-400 focus:ring-emerald-100'
-                        : 'border-red-400 focus:ring-red-100'
-                      : 'border-slate-200 focus:border-indigo-400 focus:ring-indigo-100'
-                  }`}
-                />
+                  className={`w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all ${movementForm.employee_name ? (movementForm.employee_id ? 'border-emerald-400 focus:ring-emerald-100' : 'border-red-400 focus:ring-red-100') : 'border-slate-200 focus:border-indigo-400 focus:ring-indigo-100'}`} />
                 <datalist id="employees-list">
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.full_name} />
-                  ))}
+                  {employees.map((emp) => (<option key={emp.id} value={emp.full_name || ''} />))}
                 </datalist>
                 {movementForm.employee_name && (
                   <p className={`text-xs mt-1 font-semibold ${movementForm.employee_id ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -1247,73 +900,30 @@ export default function GatekeeperPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">القسم *</label>
-                <select
-                  value={movementForm.department}
-                  onChange={e => setMovementForm({ ...movementForm, department: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400"
-                >
-                  <option value="الإنتاج">الإنتاج</option>
-                  <option value="الموارد البشرية (HR)">الموارد البشرية</option>
-                  <option value="ضبط الجودة (QC)">ضبط الجودة</option>
-                  <option value="المستودعات">المستودعات</option>
-                  <option value="الصيانة">الصيانة</option>
-                  <option value="تقنية المعلومات (IT)">تقنية المعلومات</option>
-                  <option value="مخصص">مخصص (أخرى)</option>
+                <select value={movementForm.department} onChange={(e) => setMovementForm({ ...movementForm, department: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400">
+                  <option value="الإنتاج">الإنتاج</option><option value="الموارد البشرية (HR)">الموارد البشرية</option>
+                  <option value="ضبط الجودة (QC)">ضبط الجودة</option><option value="المستودعات">المستودعات</option>
+                  <option value="الصيانة">الصيانة</option><option value="تقنية المعلومات (IT)">تقنية المعلومات</option><option value="مخصص">مخصص (أخرى)</option>
                 </select>
               </div>
 
-              {movementForm.department === 'مخصص' && (
-                <Input
-                  required
-                  placeholder="اكتب القسم..."
-                  value={movementForm.customDepartment}
-                  onChange={e => setMovementForm({ ...movementForm, customDepartment: e.target.value })}
-                />
-              )}
+              {movementForm.department === 'مخصص' && (<Input required placeholder="اكتب القسم..." value={movementForm.customDepartment} onChange={(e) => setMovementForm({ ...movementForm, customDepartment: e.target.value })} />)}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">الوجهة *</label>
-                <select
-                  value={movementForm.destination}
-                  onChange={e => setMovementForm({ ...movementForm, destination: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400"
-                >
-                  <option value="الكافتيريا">الكافتيريا</option>
-                  <option value="العيادة">العيادة</option>
-                  <option value="الموارد البشرية">الموارد البشرية</option>
-                  <option value="البوابة الخارجية">البوابة الخارجية</option>
-                  <option value="مخصص">مخصص (أخرى)</option>
+                <select value={movementForm.destination} onChange={(e) => setMovementForm({ ...movementForm, destination: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400">
+                  <option value="الكافتيريا">الكافتيريا</option><option value="العيادة">العيادة</option>
+                  <option value="الموارد البشرية">الموارد البشرية</option><option value="البوابة الخارجية">البوابة الخارجية</option><option value="مخصص">مخصص (أخرى)</option>
                 </select>
               </div>
 
-              {movementForm.destination === 'مخصص' && (
-                <Input
-                  required
-                  placeholder="حدد الوجهة..."
-                  value={movementForm.customDestination}
-                  onChange={e => setMovementForm({ ...movementForm, customDestination: e.target.value })}
-                />
-              )}
+              {movementForm.destination === 'مخصص' && (<Input required placeholder="حدد الوجهة..." value={movementForm.customDestination} onChange={(e) => setMovementForm({ ...movementForm, customDestination: e.target.value })} />)}
 
-              <textarea
-                placeholder="ملاحظات..."
-                value={movementForm.notes}
-                onChange={e => setMovementForm({ ...movementForm, notes: e.target.value })}
-                className="w-full min-h-[80px] resize-y bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-indigo-400"
-              />
+              <textarea placeholder="ملاحظات..." value={movementForm.notes} onChange={(e) => setMovementForm({ ...movementForm, notes: e.target.value })} className="w-full min-h-[80px] resize-y bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-indigo-400" />
 
               <div className="flex gap-3">
-                <Button type="submit" disabled={loading} className="flex-1">
-                  {loading ? 'جاري التسجيل...' : '✓ تسجيل الخروج'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setShowMovementModal(false)}
-                  className="flex-1"
-                >
-                  إلغاء
-                </Button>
+                <Button type="submit" disabled={loading} className="flex-1">{loading ? 'جاري التسجيل...' : '✓ تسجيل الخروج'}</Button>
+                <Button type="button" variant="secondary" onClick={() => setShowMovementModal(false)} className="flex-1">إلغاء</Button>
               </div>
             </form>
           </div>
@@ -1327,22 +937,14 @@ export default function GatekeeperPage() {
             <h3 className="text-lg font-bold mb-4">📍 تسجيل عودة موظف</h3>
             <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-4">
               <p className="text-sm text-amber-800">
-                الموظف: <strong>{arrivalData.employee_name || 'غير معروف'}</strong>
-                <br />
+                الموظف: <strong>{arrivalData.employee_name || 'غير معروف'}</strong><br />
                 صرّح بالذهاب إلى: <span className="text-lg font-black text-amber-600">{arrivalData.destination}</span>
               </p>
             </div>
             <form onSubmit={handleConfirmArrival} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  أين وصل الموظف فعلياً؟ *
-                </label>
-                <select
-                  required
-                  value={actualLocation}
-                  onChange={e => setActualLocation(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-indigo-400"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">أين وصل الموظف فعلياً؟ *</label>
+                <select required value={actualLocation} onChange={(e) => setActualLocation(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-indigo-400">
                   <option value="عاد لمكان الخروج">عاد لنفس مكان الخروج (رجوع طبيعي)</option>
                   <option value="الكافتيريا">وصل إلى الكافتيريا</option>
                   <option value="العيادة">وصل إلى العيادة</option>
@@ -1351,23 +953,13 @@ export default function GatekeeperPage() {
                 </select>
               </div>
               <div className="flex gap-3">
-                <Button type="submit" disabled={loading} className="flex-1">
-                  {loading ? 'جاري التسجيل...' : '✓ تأكيد الوصول'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setShowArrivalModal(false)}
-                  className="flex-1"
-                >
-                  إلغاء
-                </Button>
+                <Button type="submit" disabled={loading} className="flex-1">{loading ? 'جاري التسجيل...' : '✓ تأكيد الوصول'}</Button>
+                <Button type="button" variant="secondary" onClick={() => setShowArrivalModal(false)} className="flex-1">إلغاء</Button>
               </div>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }

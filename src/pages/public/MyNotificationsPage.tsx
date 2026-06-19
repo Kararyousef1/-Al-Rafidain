@@ -205,9 +205,11 @@ export default function MyNotificationsPage() {
       const data = await fetchNotificationsFromServer(userId, 100);
       setNotifications(data);
       // تحديث الكاش المحلي (localStorage) من مصدر الحقيقة
-      syncNotificationsFromServer(userId, data).catch(() => {
+      try {
+        syncNotificationsFromServer(userId, data);
+      } catch {
         /* الكاش فشل = غير حرج، تجاهل بصمت */
-      });
+      }
     } catch (err) {
       console.error('[MyNotificationsPage] فشل جلب الإشعارات:', err);
       setError(err instanceof Error ? err.message : 'تعذّر تحميل الإشعارات من الخادم');

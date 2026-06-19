@@ -1,22 +1,46 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  EmployeeDashboard - لوحة الموظف (نسخة مُصلحة)
+ * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة:
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ 4 استخدام any → 0
+ *  ✅ attendanceData: any[] → AttendanceRecord[]
+ *  ✅ problemTrend: any[] → TrendDataPoint[]
+ *  ✅ attendance as any[] → AttendanceRecord[]
+ *  ✅ setSelectedPeriod(... as any) → TrendPeriod union
+ *  ✅ تنظيف جميع markdown artifacts
+ *  ✅ catch blocks → getErrorMessage
+ *  ════════════════════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import {
-  AlertCircle, CheckCircle, Clock, Plus, ChevronLeft,
-  Bot, Star, RefreshCw, TrendingUp, TrendingDown,
-  Heart, WifiOff, X, Award, Activity, Calendar,
-  FileText, User, Bell, MessageSquare, Brain,
-  BarChart3, Target, Zap, Flame, BookOpen
+  CheckCircle, Clock, Plus,
+  Star, TrendingUp,
+  Heart, Award, Activity, Calendar,
+  FileText, Zap, Flame, BookOpen, Brain,
+  BarChart3, Target,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { supabase } from '../../lib/supabase';
 import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
-import { format, subDays, isAfter } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend
+  ResponsiveContainer, BarChart, Bar,
 } from 'recharts';
+import { getErrorMessage } from '../../lib/errors';
+
+// ════════════════════════════════════════════════════
+// أنواع البيانات
+// ════════════════════════════════════════════════════
+
+type TrendPeriod = 'week' | 'month' | 'quarter';
 
 interface Problem {
   id: string;
@@ -32,15 +56,6 @@ interface Problem {
   };
 }
 
-const COLORS = {
-  pending: '#F59E0B',
-  in_progress: '#3B82F6',
-  resolved: '#10B981',
-  closed: '#6B7280',
-};
-
-const PIE_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
-
 interface WellnessEntry {
   date: string;
   score: number;
@@ -50,9 +65,34 @@ interface WellnessEntry {
   notes?: string;
 }
 
+interface AttendanceRecord {
+  id?: string;
+  shift_date: string;
+  status?: string;
+}
+
+interface TrendDataPoint {
+  date: string;
+  problems: number;
+  wellness: number;
+}
+
+type IconType = React.ComponentType<{ size?: number; className?: string }>;
+
+interface QuickAction {
+  label: string;
+  icon: IconType;
+  action: () => void;
+  color: string;
+}
+
+// ════════════════════════════════════════════════════
+// المكون الرئيسي
+// ════════════════════════════════════════════════════
+
 export default function EmployeeDashboard() {
   const { user } = useAuthStore();
-  const { setActiveView, addToast } = useUIStore();
+  const { setActiveView } = useUIStore();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalProblems: 0,
@@ -64,9 +104,9 @@ export default function EmployeeDashboard() {
   });
   const [recentProblems, setRecentProblems] = useState<Problem[]>([]);
   const [wellnessHistory, setWellnessHistory] = useState<WellnessEntry[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter'>('week');
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-  const [problemTrend, setProblemTrend] = useState<any[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>('week');
+  const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
+  const [problemTrend, setProblemTrend] = useState<TrendDataPoint[]>([]);
 
   const fetchDashboardData = useCallback(async () => {
     if (!user?.id) return;
@@ -79,7 +119,7 @@ export default function EmployeeDashboard() {
 
       const problems = (problemsRes.data || []) as Problem[];
       const wellness = (wellnessRes.data || []) as WellnessEntry[];
-      const attendance = (attendanceRes.data || []) as any[];
+      const attendance = (attendanceRes.data || []) as AttendanceRecord[];
 
       setRecentProblems(problems.slice(0, 5));
       setWellnessHistory(wellness);
@@ -87,26 +127,24 @@ export default function EmployeeDashboard() {
 
       setStats({
         totalProblems: problems.length,
-        resolvedProblems: problems.filter(p => p.status === 'resolved' || p.status === 'closed').length,
-        pendingProblems: problems.filter(p => p.status === 'pending').length,
+        resolvedProblems: problems.filter((p) => p.status === 'resolved' || p.status === 'closed').length,
+        pendingProblems: problems.filter((p) => p.status === 'pending').length,
         wellnessScore: wellness[0]?.score || 0,
         streak: Math.floor(Math.random() * 7) + 1,
-        attendanceRate: attendance.length > 0 ? Math.round((attendance.filter(a => a.status !== 'غائب').length / attendance.length) * 100) : 0,
+        attendanceRate: attendance.length > 0 ? Math.round((attendance.filter((a) => a.status !== 'غائب').length / attendance.length) * 100) : 0,
       });
 
-      // Trend analysis
-      const trend = Array.from({ length: 7 }, (_, i) => {
+      const trend: TrendDataPoint[] = Array.from({ length: 7 }, (_, i) => {
         const date = format(subDays(new Date(), 6 - i), 'yyyy-MM-dd');
         return {
           date: format(subDays(new Date(), 6 - i), 'E', { locale: ar }),
-          problems: problems.filter(p => p.created_at?.startsWith(date)).length,
-          wellness: wellness.find(w => w.date === date)?.score || 0,
+          problems: problems.filter((p) => p.created_at?.startsWith(date)).length,
+          wellness: wellness.find((w) => w.date === date)?.score || 0,
         };
       });
       setProblemTrend(trend);
-
     } catch (err) {
-      console.error('Dashboard fetch error:', err);
+      console.error('Dashboard fetch error:', getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -114,7 +152,7 @@ export default function EmployeeDashboard() {
 
   useEffect(() => { fetchDashboardData(); }, [fetchDashboardData]);
 
-  const quickActions = [
+  const quickActions: QuickAction[] = [
     { label: 'مشكلة جديدة', icon: Plus, action: () => setActiveView('new-problem'), color: 'bg-gradient-to-br from-rose-500 to-pink-600' },
     { label: 'طلب إجازة', icon: Calendar, action: () => setActiveView('employee-leave-requests'), color: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
     { label: 'تسجيل مزاج', icon: Heart, action: () => setActiveView('employee-wellness'), color: 'bg-gradient-to-br from-violet-500 to-purple-600' },
@@ -131,10 +169,13 @@ export default function EmployeeDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600" />
       </div>
     );
   }
+
+  const severityBadge = (severity: Problem['severity']): 'danger' | 'warning' | 'info' =>
+    severity === 'critical' || severity === 'high' ? 'danger' : severity === 'medium' ? 'warning' : 'info';
 
   return (
     <div className="space-y-6 animate-fade-in" dir="rtl">
@@ -151,15 +192,15 @@ export default function EmployeeDashboard() {
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {quickActions.map((action, idx) => (
-            <button key={idx} onClick={action.action}
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-xl px-4 py-3 transition-all">
-              <div className="p-2 rounded-lg bg-white/20">
-                <action.icon size={18} />
-              </div>
-              <span className="text-sm font-bold">{action.label}</span>
-            </button>
-          ))}
+          {quickActions.map((action, idx) => {
+            const ActionIcon = action.icon;
+            return (
+              <button key={idx} onClick={action.action} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-xl px-4 py-3 transition-all">
+                <div className="p-2 rounded-lg bg-white/20"><ActionIcon size={18} /></div>
+                <span className="text-sm font-bold">{action.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -189,10 +230,7 @@ export default function EmployeeDashboard() {
                 <Clock size={16} className="text-emerald-500" />
               </div>
               <div className="text-2xl font-extrabold mt-2">{stats.attendanceRate}%</div>
-              <div className="flex items-center gap-2 mt-1">
-                <TrendingUp size={14} className="text-emerald-500" />
-                <span className="text-xs text-slate-500">نسبة الالتزام</span>
-              </div>
+              <div className="flex items-center gap-2 mt-1"><TrendingUp size={14} className="text-emerald-500" /><span className="text-xs text-slate-500">نسبة الالتزام</span></div>
             </CardTitle>
           </CardHeader>
         </Card>
@@ -205,10 +243,7 @@ export default function EmployeeDashboard() {
                 <Heart size={16} className="text-rose-500" />
               </div>
               <div className="text-2xl font-extrabold mt-2">{stats.wellnessScore}%</div>
-              <div className="flex items-center gap-2 mt-1">
-                <Activity size={14} className="text-rose-500" />
-                <span className="text-xs text-slate-500">آخر تحديث اليوم</span>
-              </div>
+              <div className="flex items-center gap-2 mt-1"><Activity size={14} className="text-rose-500" /><span className="text-xs text-slate-500">آخر تحديث اليوم</span></div>
             </CardTitle>
           </CardHeader>
         </Card>
@@ -221,10 +256,7 @@ export default function EmployeeDashboard() {
                 <Zap size={16} className="text-amber-500" />
               </div>
               <div className="text-2xl font-extrabold mt-2">{stats.streak}🔥</div>
-              <div className="flex items-center gap-2 mt-1">
-                <Award size={14} className="text-amber-500" />
-                <span className="text-xs text-slate-500">أيام متتالية</span>
-              </div>
+              <div className="flex items-center gap-2 mt-1"><Award size={14} className="text-amber-500" /><span className="text-xs text-slate-500">أيام متتالية</span></div>
             </CardTitle>
           </CardHeader>
         </Card>
@@ -232,14 +264,9 @@ export default function EmployeeDashboard() {
 
       {/* Charts */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Problem Trend */}
         <Card>
           <CardHeader>
-            <CardTitle>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-700">تحليل المشاكل</span>
-              </div>
-            </CardTitle>
+            <CardTitle><span className="text-sm font-bold text-slate-700">تحليل المشاكل</span></CardTitle>
           </CardHeader>
           <div className="px-4 pb-4" dir="ltr">
             <ResponsiveContainer width="100%" height={200}>
@@ -260,13 +287,12 @@ export default function EmployeeDashboard() {
           </div>
         </Card>
 
-        {/* Wellness Trend */}
         <Card>
           <CardHeader>
             <CardTitle>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-bold text-slate-700">مؤشر الصحة النفسية</span>
-                <select value={selectedPeriod} onChange={e => setSelectedPeriod(e.target.value as any)} className="text-xs border rounded-lg px-2 py-1 outline-none">
+                <select value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value as TrendPeriod)} className="text-xs border rounded-lg px-2 py-1 outline-none">
                   <option value="week">أسبوع</option>
                   <option value="month">شهر</option>
                   <option value="quarter">ربع سنة</option>
@@ -305,22 +331,16 @@ export default function EmployeeDashboard() {
               <p className="font-bold text-sm">لا توجد مشاكل! 🎉</p>
             </div>
           ) : (
-            recentProblems.slice(0, 5).map(problem => (
+            recentProblems.slice(0, 5).map((problem) => (
               <div key={problem.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-3">
-                  <div className={`w-2.5 h-2.5 rounded-full ${
-                    problem.status === 'resolved' ? 'bg-emerald-500' :
-                    problem.status === 'in_progress' ? 'bg-blue-500' :
-                    problem.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'
-                  }`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${problem.status === 'resolved' ? 'bg-emerald-500' : problem.status === 'in_progress' ? 'bg-blue-500' : problem.status === 'pending' ? 'bg-amber-500' : 'bg-slate-500'}`} />
                   <div>
                     <p className="text-sm font-bold text-slate-700">{problem.title}</p>
                     <p className="text-xs text-slate-500">{problem.category} • {problem.created_at ? format(new Date(problem.created_at), 'P', { locale: ar }) : ''}</p>
                   </div>
                 </div>
-                <Badge variant={problem.severity === 'critical' || problem.severity === 'high' ? 'danger' : problem.severity === 'medium' ? 'warning' : 'info'}>
-                  {problem.severity}
-                </Badge>
+                <Badge variant={severityBadge(problem.severity)}>{problem.severity}</Badge>
               </div>
             ))
           )}
@@ -331,37 +351,23 @@ export default function EmployeeDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <div className="flex items-center gap-2">
-              <Brain size={18} className="text-indigo-500" />
-              <span className="text-sm font-bold text-slate-700">نظرة تحليلية سريعة</span>
-            </div>
+            <div className="flex items-center gap-2"><Brain size={18} className="text-indigo-500" /><span className="text-sm font-bold text-slate-700">نظرة تحليلية سريعة</span></div>
           </CardTitle>
         </CardHeader>
         <div className="px-4 pb-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Target size={16} className="text-indigo-600" />
-                <span className="text-xs font-bold text-indigo-600">الإنتاجية</span>
-              </div>
-              <p className="text-lg font-extrabold text-slate-800">
-                {stats.resolvedProblems > 0 ? Math.round((stats.resolvedProblems / stats.totalProblems) * 100) : 100}%
-              </p>
+              <div className="flex items-center gap-2 mb-2"><Target size={16} className="text-indigo-600" /><span className="text-xs font-bold text-indigo-600">الإنتاجية</span></div>
+              <p className="text-lg font-extrabold text-slate-800">{stats.resolvedProblems > 0 ? Math.round((stats.resolvedProblems / stats.totalProblems) * 100) : 100}%</p>
               <p className="text-xs text-slate-500 mt-1">نسبة إنجاز المشاكل</p>
             </div>
             <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Flame size={16} className="text-emerald-600" />
-                <span className="text-xs font-bold text-emerald-600">التسلسل</span>
-              </div>
+              <div className="flex items-center gap-2 mb-2"><Flame size={16} className="text-emerald-600" /><span className="text-xs font-bold text-emerald-600">التسلسل</span></div>
               <p className="text-lg font-extrabold text-slate-800">{stats.streak} أيام</p>
               <p className="text-xs text-slate-500 mt-1">أيام متتالية من النشاط</p>
             </div>
             <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <BarChart3 size={16} className="text-amber-600" />
-                <span className="text-xs font-bold text-amber-600">الحضور</span>
-              </div>
+              <div className="flex items-center gap-2 mb-2"><BarChart3 size={16} className="text-amber-600" /><span className="text-xs font-bold text-amber-600">الحضور</span></div>
               <p className="text-lg font-extrabold text-slate-800">{stats.attendanceRate}%</p>
               <p className="text-xs text-slate-500 mt-1">نسبة الحضور الإجمالية</p>
             </div>
