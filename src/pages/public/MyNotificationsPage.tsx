@@ -1,168 +1,220 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  MyNotificationsPage - صفحة الإشعارات الشخصية
+ *  MyNotificationsPage - صفحة الإشعارات الشخصية (نسخة مُصلحة)
+ * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة (حسب تقرير الحالة - المرحلة 2):
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ مصدر واحد للحقيقة: Supabase (عبر fetchNotificationsFromServer)
+ *  ✅ localStorage أصبح كاشاً فقط (عبر syncNotificationsFromServer)
+ *  ✅ لا كتابة مزدوجة: العمليات تذهب للخادم فقط، ثم تُحدّث الحالة
+ *  ✅ تحديثات تفاؤلية (Optimistic UI) مع استرجاع عند الفشل
+ *  ✅ معالجة أخطاء محكمة + حالات Loading/Error/Empty
+ *  ✅ إصلاح أخطاء الصياغة (template literals في setActiveView)
+ *  ✅ Fallback آمن للأنواع غير المعروفة في TYPE_META
+ *  ✅ زر تحديث يدوي (Retry/Refresh)
+ *  ✅ Realtime فقط كمصدر للتحديث الفوري (إزالة الازدواجية)
  *  ════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Bell, CheckCheck, Trash2, Filter, Search, X, Inbox,
   AlertCircle, CheckCircle, Info, AlertTriangle, XCircle,
   Calendar, Layers, Sparkles, Shield, Clock, UserCheck,
   Users, DoorOpen, Gift, Star, Award, CreditCard, HardDrive,
   Database, Bug, BookOpen, MessageSquare, Briefcase, Heart,
-  TrendingUp, Laptop, FileText, Zap, Settings2
+  TrendingUp, Laptop, FileText, Zap, Settings2, RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { useAuthStore, useUIStore } from '../../store';
+
+// ─── خدمات الإشعارات (Supabase = مصدر الحقيقة) ───────────────────
 import {
-  getUserNotifications,
-  markAsRead,
-  markAllAsRead,
-  deleteNotification,
-  calculateStats,
-  filterNotifications,
-  clearAllNotifications,
-  subscribeToUserNotifications,
-  type NotificationEvent,
-} from '../../lib/notificationManager';
-import {
+  fetchNotificationsFromServer,
   subscribeToRealtimeNotifications,
   markAsReadOnServer,
   markAllAsReadOnServer,
   deleteNotificationOnServer,
 } from '../../lib/notificationService';
+
+// ─── دوال مساعدة نقية (Cache Manager) ─────────────────────────────
+import {
+  calculateStats,
+  filterNotifications,
+  syncNotificationsFromServer,
+} from '../../lib/notificationManager';
+
 import type { AppNotification, NotificationType, NotificationFilter } from '../../constants/notificationTypes';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 
-// أيقونات لكل نوع إشعار - مع fallback للنظام
-const TYPE_META: Record<string, { label: string; color: string; icon: React.ComponentType<any>; bg: string }> = {
+// ════════════════════════════════════════════════════════════════
+//  ثوابت الأنواع والفلاتر
+// ════════════════════════════════════════════════════════════════
+
+type TypeMeta = { label: string; color: string; icon: React.ComponentType<any>; bg: string };
+
+// أيقونات لكل نوع إشعار
+const TYPE_META: Record<string, TypeMeta> = {
   // الأنواع الأساسية
-  welcome:           { label: 'ترحيب',     color: 'text-indigo-700',  icon: Sparkles,      bg: 'bg-indigo-50' },
-  login:             { label: 'تسجيل دخول', color: 'text-blue-700',   icon: CheckCircle,   bg: 'bg-blue-50' },
-  logout:            { label: 'تسجيل خروج', color: 'text-slate-700',  icon: X,             bg: 'bg-slate-50' },
-  profile_update:    { label: 'ملف شخصي',  color: 'text-cyan-700',   icon: Calendar,      bg: 'bg-cyan-50' },
-  permission_update: { label: 'صلاحيات',   color: 'text-amber-700',  icon: Shield,        bg: 'bg-amber-50' },
-  system:            { label: 'نظام',      color: 'text-violet-700',  icon: Bell,          bg: 'bg-violet-50' },
-  info:              { label: 'معلومات',    color: 'text-blue-700',   icon: Info,          bg: 'bg-blue-50' },
-  success:           { label: 'نجاح',      color: 'text-emerald-700', icon: CheckCircle,   bg: 'bg-emerald-50' },
-  warning:           { label: 'تحذير',     color: 'text-amber-700',  icon: AlertTriangle, bg: 'bg-amber-50' },
-  error:             { label: 'خطأ',       color: 'text-red-700',    icon: XCircle,       bg: 'bg-red-50' },
+  welcome:           { label: 'ترحيب',      color: 'text-indigo-700',  icon: Sparkles,      bg: 'bg-indigo-50' },
+  login:             { label: 'تسجيل دخول',  color: 'text-blue-700',    icon: CheckCircle,  bg: 'bg-blue-50' },
+  logout:            { label: 'تسجيل خروج',  color: 'text-slate-700',   icon: X,            bg: 'bg-slate-50' },
+  profile_update:    { label: 'ملف شخصي',   color: 'text-cyan-700',    icon: Calendar,     bg: 'bg-cyan-50' },
+  permission_update: { label: 'صلاحيات',    color: 'text-amber-700',   icon: Shield,       bg: 'bg-amber-50' },
+  system:            { label: 'نظام',       color: 'text-violet-700',  icon: Bell,         bg: 'bg-violet-50' },
+  info:              { label: 'معلومات',    color: 'text-blue-700',    icon: Info,         bg: 'bg-blue-50' },
+  success:           { label: 'نجاح',       color: 'text-emerald-700', icon: CheckCircle,  bg: 'bg-emerald-50' },
+  warning:           { label: 'تحذير',      color: 'text-amber-700',   icon: AlertTriangle,bg: 'bg-amber-50' },
+  error:             { label: 'خطأ',        color: 'text-red-700',     icon: XCircle,      bg: 'bg-red-50' },
   // إشعارات المشاكل
-  problem_created:   { label: 'مشكلة جديدة', color: 'text-rose-700',  icon: AlertCircle,   bg: 'bg-rose-50' },
-  problem_updated:   { label: 'تحديث مشكلة', color: 'text-orange-700', icon: MessageSquare, bg: 'bg-orange-50' },
-  problem_comment:   { label: 'تعليق مشكلة', color: 'text-amber-700', icon: MessageSquare, bg: 'bg-amber-50' },
-  problem_resolved:  { label: 'تم حل مشكلة', color: 'text-emerald-700', icon: CheckCircle, bg: 'bg-emerald-50' },
-  problem_reopened:  { label: 'إعادة فتح',   color: 'text-rose-700',  icon: AlertCircle,   bg: 'bg-rose-50' },
-  problem_overdue:   { label: 'مشكلة متأخرة', color: 'text-red-700',  icon: XCircle,       bg: 'bg-red-50' },
+  problem_created:   { label: 'مشكلة جديدة', color: 'text-rose-700',   icon: AlertCircle,  bg: 'bg-rose-50' },
+  problem_updated:   { label: 'تحديث مشكلة', color: 'text-orange-700', icon: MessageSquare,bg: 'bg-orange-50' },
+  problem_comment:   { label: 'تعليق مشكلة', color: 'text-amber-700',  icon: MessageSquare,bg: 'bg-amber-50' },
+  problem_resolved:  { label: 'تم حل مشكلة', color: 'text-emerald-700',icon: CheckCircle,  bg: 'bg-emerald-50' },
+  problem_reopened:  { label: 'إعادة فتح',   color: 'text-rose-700',   icon: AlertCircle,  bg: 'bg-rose-50' },
+  problem_overdue:   { label: 'مشكلة متأخرة',color: 'text-red-700',    icon: XCircle,      bg: 'bg-red-50' },
   // إشعارات الإجازات
-  leave_requested:   { label: 'طلب إجازة',  color: 'text-blue-700',   icon: Calendar,      bg: 'bg-blue-50' },
-  leave_approved:    { label: 'تمت الموافقة', color: 'text-emerald-700', icon: CheckCircle, bg: 'bg-emerald-50' },
-  leave_rejected:    { label: 'مرفوض',      color: 'text-red-700',    icon: XCircle,       bg: 'bg-red-50' },
-  leave_expiring:    { label: 'إجازة تنتهي', color: 'text-amber-700', icon: Clock,         bg: 'bg-amber-50' },
-  leave_balance_low: { label: 'رصيد منخفض', color: 'text-orange-700', icon: AlertTriangle, bg: 'bg-orange-50' },
+  leave_requested:   { label: 'طلب إجازة',  color: 'text-blue-700',    icon: Calendar,     bg: 'bg-blue-50' },
+  leave_approved:    { label: 'تمت الموافقة',color: 'text-emerald-700', icon: CheckCircle,  bg: 'bg-emerald-50' },
+  leave_rejected:    { label: 'مرفوض',      color: 'text-red-700',     icon: XCircle,      bg: 'bg-red-50' },
+  leave_expiring:    { label: 'إجازة تنتهي',color: 'text-amber-700',   icon: Clock,        bg: 'bg-amber-50' },
+  leave_balance_low: { label: 'رصيد منخفض', color: 'text-orange-700',  icon: AlertTriangle,bg: 'bg-orange-50' },
   // التعيينات
-  assigned_to_you:   { label: 'تم تعيينك',  color: 'text-indigo-700', icon: UserCheck,     bg: 'bg-indigo-50' },
-  unassigned_from_you: { label: 'إلغاء تعيين', color: 'text-slate-700', icon: X,           bg: 'bg-slate-50' },
+  assigned_to_you:     { label: 'تم تعيينك',   color: 'text-indigo-700', icon: UserCheck,  bg: 'bg-indigo-50' },
+  unassigned_from_you: { label: 'إلغاء تعيين', color: 'text-slate-700',  icon: X,          bg: 'bg-slate-50' },
   // SOPs
-  sop_created:       { label: 'SOP جديد',   color: 'text-cyan-700',   icon: BookOpen,      bg: 'bg-cyan-50' },
-  sop_approved:      { label: 'SOP معتمد',  color: 'text-emerald-700', icon: CheckCircle,  bg: 'bg-emerald-50' },
-  sop_assigned:      { label: 'SOP مخصص لك', color: 'text-indigo-700', icon: BookOpen,      bg: 'bg-indigo-50' },
-  sop_rejected:      { label: 'SOP مرفوض',  color: 'text-red-700',    icon: XCircle,       bg: 'bg-red-50' },
-  sop_expiring:      { label: 'SOP ينتهي',  color: 'text-amber-700', icon: Clock,         bg: 'bg-amber-50' },
+  sop_created:  { label: 'SOP جديد',     color: 'text-cyan-700',    icon: BookOpen,     bg: 'bg-cyan-50' },
+  sop_approved: { label: 'SOP معتمد',    color: 'text-emerald-700', icon: CheckCircle,  bg: 'bg-emerald-50' },
+  sop_assigned: { label: 'SOP مخصص لك',  color: 'text-indigo-700',  icon: BookOpen,     bg: 'bg-indigo-50' },
+  sop_rejected: { label: 'SOP مرفوض',    color: 'text-red-700',     icon: XCircle,      bg: 'bg-red-50' },
+  sop_expiring: { label: 'SOP ينتهي',    color: 'text-amber-700',   icon: Clock,        bg: 'bg-amber-50' },
   // التدريب
-  training_completed: { label: 'تم التدريب', color: 'text-emerald-700', icon: Award,       bg: 'bg-emerald-50' },
-  training_assigned: { label: 'تدريب جديد',  color: 'text-purple-700', icon: Award, bg: 'bg-purple-50' },
-  training_due:      { label: 'تدريب مستحق', color: 'text-amber-700', icon: Clock,         bg: 'bg-amber-50' },
-  training_overdue:  { label: 'تدريب متأخر', color: 'text-red-700',   icon: XCircle,       bg: 'bg-red-50' },
-  training_cert_ready: { label: 'شهادة جاهزة', color: 'text-emerald-700', icon: Award,     bg: 'bg-emerald-50' },
+  training_completed:   { label: 'تم التدريب',   color: 'text-emerald-700', icon: Award, bg: 'bg-emerald-50' },
+  training_assigned:    { label: 'تدريب جديد',   color: 'text-purple-700',  icon: Award, bg: 'bg-purple-50' },
+  training_due:         { label: 'تدريب مستحق',  color: 'text-amber-700',   icon: Clock, bg: 'bg-amber-50' },
+  training_overdue:     { label: 'تدريب متأخر',  color: 'text-red-700',     icon: XCircle,bg: 'bg-red-50' },
+  training_cert_ready:  { label: 'شهادة جاهزة',  color: 'text-emerald-700', icon: Award, bg: 'bg-emerald-50' },
   // الاستبيانات
-  survey_published:  { label: 'استبيان جديد', color: 'text-blue-700',  icon: MessageSquare, bg: 'bg-blue-50' },
-  survey_reminder:   { label: 'تذكير باستبيان', color: 'text-amber-700', icon: Bell,       bg: 'bg-amber-50' },
-  survey_deadline_soon: { label: 'استبيان ينتهي', color: 'text-orange-700', icon: Clock,    bg: 'bg-orange-50' },
-  survey_results_ready: { label: 'نتائج استبيان', color: 'text-green-700', icon: TrendingUp, bg: 'bg-green-50' },
+  survey_published:      { label: 'استبيان جديد',  color: 'text-blue-700',   icon: MessageSquare, bg: 'bg-blue-50' },
+  survey_reminder:       { label: 'تذكير باستبيان',color: 'text-amber-700',  icon: Bell,          bg: 'bg-amber-50' },
+  survey_deadline_soon:  { label: 'استبيان ينتهي', color: 'text-orange-700', icon: Clock,         bg: 'bg-orange-50' },
+  survey_results_ready:  { label: 'نتائج استبيان', color: 'text-green-700',  icon: TrendingUp,    bg: 'bg-green-50' },
   // العافية
-  wellness_update:   { label: 'تحديث عافية', color: 'text-teal-700',  icon: Heart,        bg: 'bg-teal-50' },
-  wellness_alert:    { label: 'تنبيه عافية', color: 'text-rose-700',  icon: Heart,         bg: 'bg-rose-50' },
-  wellness_improvement: { label: 'تحسن عافية', color: 'text-emerald-700', icon: Heart,     bg: 'bg-emerald-50' },
-  wellness_checkin_reminder: { label: 'تذكير عافية', color: 'text-teal-700', icon: Bell,   bg: 'bg-teal-50' },
+  wellness_update:           { label: 'تحديث عافية', color: 'text-teal-700',   icon: Heart, bg: 'bg-teal-50' },
+  wellness_alert:            { label: 'تنبيه عافية', color: 'text-rose-700',   icon: Heart, bg: 'bg-rose-50' },
+  wellness_improvement:      { label: 'تحسن عافية',  color: 'text-emerald-700',icon: Heart, bg: 'bg-emerald-50' },
+  wellness_checkin_reminder: { label: 'تذكير عافية', color: 'text-teal-700',   icon: Bell,  bg: 'bg-teal-50' },
   // الحضور
-  attendance_recorded: { label: 'تسجيل حضور', color: 'text-blue-700', icon: Clock,         bg: 'bg-blue-50' },
-  attendance_violation: { label: 'مخالفة حضور', color: 'text-red-700', icon: AlertTriangle, bg: 'bg-red-50' },
-  attendance_late:    { label: 'تأخير',       color: 'text-amber-700', icon: Clock,        bg: 'bg-amber-50' },
-  attendance_absent:  { label: 'غياب',        color: 'text-red-700',   icon: XCircle,      bg: 'bg-red-50' },
-  attendance_overtime: { label: 'وقت إضافي',   color: 'text-emerald-700', icon: Clock,     bg: 'bg-emerald-50' },
+  attendance_recorded:  { label: 'تسجيل حضور', color: 'text-blue-700',   icon: Clock,          bg: 'bg-blue-50' },
+  attendance_violation: { label: 'مخالفة حضور',color: 'text-red-700',    icon: AlertTriangle,  bg: 'bg-red-50' },
+  attendance_late:      { label: 'تأخير',      color: 'text-amber-700',  icon: Clock,          bg: 'bg-amber-50' },
+  attendance_absent:    { label: 'غياب',       color: 'text-red-700',    icon: XCircle,        bg: 'bg-red-50' },
+  attendance_overtime:  { label: 'وقت إضافي',  color: 'text-emerald-700',icon: Clock,          bg: 'bg-emerald-50' },
   // الحارس
-  gatekeeper_entry:  { label: 'دخول بوابة',  color: 'text-blue-700',  icon: DoorOpen,     bg: 'bg-blue-50' },
-  gatekeeper_exit:   { label: 'خروج بوابة',  color: 'text-slate-700', icon: DoorOpen,     bg: 'bg-slate-50' },
-  gatekeeper_visitor: { label: 'زائر',       color: 'text-cyan-700',   icon: Users,        bg: 'bg-cyan-50' },
-  gatekeeper_suspicious: { label: 'نشاط مشبوه', color: 'text-red-700', icon: AlertTriangle, bg: 'bg-red-50' },
+  gatekeeper_entry:     { label: 'دخول بوابة',  color: 'text-blue-700',   icon: DoorOpen,      bg: 'bg-blue-50' },
+  gatekeeper_exit:      { label: 'خروج بوابة',  color: 'text-slate-700',  icon: DoorOpen,      bg: 'bg-slate-50' },
+  gatekeeper_visitor:   { label: 'زائر',         color: 'text-cyan-700',   icon: Users,         bg: 'bg-cyan-50' },
+  gatekeeper_suspicious:{ label: 'نشاط مشبوه',   color: 'text-red-700',    icon: AlertTriangle, bg: 'bg-red-50' },
   // الإعلانات
-  announcement_published: { label: 'إعلان', color: 'text-indigo-700', icon: Bell,          bg: 'bg-indigo-50' },
-  announcement_urgent: { label: 'إعلان عاجل', color: 'text-red-700',  icon: AlertTriangle, bg: 'bg-red-50' },
-  announcement_birthday: { label: 'عيد ميلاد', color: 'text-pink-700', icon: Gift,         bg: 'bg-pink-50' },
-  announcement_ramadan: { label: 'رمضان',    color: 'text-emerald-700', icon: Star,        bg: 'bg-emerald-50' },
-  announcement_holiday: { label: 'عطلة',     color: 'text-amber-700', icon: Sparkles,      bg: 'bg-amber-50' },
+  announcement_published: { label: 'إعلان',      color: 'text-indigo-700', icon: Bell,           bg: 'bg-indigo-50' },
+  announcement_urgent:    { label: 'إعلان عاجل', color: 'text-red-700',    icon: AlertTriangle, bg: 'bg-red-50' },
+  announcement_birthday:  { label: 'عيد ميلاد',  color: 'text-pink-700',   icon: Gift,          bg: 'bg-pink-50' },
+  announcement_ramadan:   { label: 'رمضان',      color: 'text-emerald-700',icon: Star,          bg: 'bg-emerald-50' },
+  announcement_holiday:   { label: 'عطلة',       color: 'text-amber-700',  icon: Sparkles,      bg: 'bg-amber-50' },
   // الكشك
-  kiosk_session:     { label: 'جلسة كشك',    color: 'text-cyan-700',   icon: Laptop,      bg: 'bg-cyan-50' },
-  kiosk_alert:       { label: 'تنبيه كشك',   color: 'text-amber-700', icon: AlertTriangle, bg: 'bg-amber-50' },
-  kiosk_break_reminder: { label: 'تذكير استراحة', color: 'text-blue-700', icon: Clock,    bg: 'bg-blue-50' },
+  kiosk_session:        { label: 'جلسة كشك',       color: 'text-cyan-700',  icon: Laptop,         bg: 'bg-cyan-50' },
+  kiosk_alert:          { label: 'تنبيه كشك',      color: 'text-amber-700', icon: AlertTriangle,  bg: 'bg-amber-50' },
+  kiosk_break_reminder: { label: 'تذكير استراحة',  color: 'text-blue-700',  icon: Clock,          bg: 'bg-blue-50' },
   // الموظفين
-  employee_approved: { label: 'تم الاعتماد', color: 'text-emerald-700', icon: UserCheck,   bg: 'bg-emerald-50' },
-  employee_rejected: { label: 'مرفوض',       color: 'text-red-700',    icon: XCircle,      bg: 'bg-red-50' },
-  employee_onboarding: { label: 'موظف جديد', color: 'text-indigo-700', icon: Sparkles,     bg: 'bg-indigo-50' },
-  employee_anniversary: { label: 'ذكرى انضمام', color: 'text-amber-700', icon: Award,      bg: 'bg-amber-50' },
+  employee_approved:    { label: 'تم الاعتماد', color: 'text-emerald-700', icon: UserCheck,  bg: 'bg-emerald-50' },
+  employee_rejected:    { label: 'مرفوض',       color: 'text-red-700',     icon: XCircle,    bg: 'bg-red-50' },
+  employee_onboarding:  { label: 'موظف جديد',   color: 'text-indigo-700',  icon: Sparkles,   bg: 'bg-indigo-50' },
+  employee_anniversary: { label: 'ذكرى انضمام', color: 'text-amber-700',   icon: Award,      bg: 'bg-amber-50' },
   // اجتماعات
-  meeting_scheduled: { label: 'اجتماع',      color: 'text-purple-700', icon: Calendar,     bg: 'bg-purple-50' },
-  meeting_reminder:  { label: 'تذكير اجتماع', color: 'text-amber-700', icon: Bell,         bg: 'bg-amber-50' },
-  meeting_cancelled: { label: 'إلغاء اجتماع', color: 'text-red-700',   icon: XCircle,      bg: 'bg-red-50' },
-  meeting_rescheduled: { label: 'تغيير موعد', color: 'text-orange-700', icon: Calendar,    bg: 'bg-orange-50' },
-  meeting_minutes_ready: { label: 'محضر اجتماع', color: 'text-blue-700', icon: BookOpen,   bg: 'bg-blue-50' },
+  meeting_scheduled:    { label: 'اجتماع',       color: 'text-purple-700', icon: Calendar, bg: 'bg-purple-50' },
+  meeting_reminder:     { label: 'تذكير اجتماع', color: 'text-amber-700',  icon: Bell,     bg: 'bg-amber-50' },
+  meeting_cancelled:    { label: 'إلغاء اجتماع', color: 'text-red-700',    icon: XCircle,  bg: 'bg-red-50' },
+  meeting_rescheduled:  { label: 'تغيير موعد',   color: 'text-orange-700', icon: Calendar, bg: 'bg-orange-50' },
+  meeting_minutes_ready:{ label: 'محضر اجتماع',  color: 'text-blue-700',   icon: BookOpen, bg: 'bg-blue-50' },
   // مهام
-  task_assigned:     { label: 'مهمة جديدة',  color: 'text-indigo-700', icon: CheckCircle,  bg: 'bg-indigo-50' },
-  task_overdue:      { label: 'مهمة متأخرة', color: 'text-red-700',   icon: XCircle,       bg: 'bg-red-50' },
-  task_completed:    { label: 'مهمة منجزة',  color: 'text-emerald-700', icon: CheckCircle, bg: 'bg-emerald-50' },
-  task_reminder:     { label: 'تذكير بمهمة', color: 'text-amber-700', icon: Bell,          bg: 'bg-amber-50' },
+  task_assigned:  { label: 'مهمة جديدة',  color: 'text-indigo-700', icon: CheckCircle,  bg: 'bg-indigo-50' },
+  task_overdue:   { label: 'مهمة متأخرة', color: 'text-red-700',    icon: XCircle,      bg: 'bg-red-50' },
+  task_completed: { label: 'مهمة منجزة',  color: 'text-emerald-700',icon: CheckCircle,  bg: 'bg-emerald-50' },
+  task_reminder:  { label: 'تذكير بمهمة', color: 'text-amber-700',  icon: Bell,         bg: 'bg-amber-50' },
   // النظام
-  system_maintenance: { label: 'صيانة',      color: 'text-amber-700', icon: Settings2,      bg: 'bg-amber-50' },
-  system_update:     { label: 'تحديث',       color: 'text-blue-700',   icon: Bell,         bg: 'bg-blue-50' },
-  system_security_alert: { label: 'تنبيه أمان', color: 'text-red-700', icon: Shield,       bg: 'bg-red-50' },
-  system_backup_completed: { label: 'نسخة احتياطية', color: 'text-emerald-700', icon: Database, bg: 'bg-emerald-50' },
-  system_error:      { label: 'خطأ نظام',    color: 'text-red-700',    icon: XCircle,      bg: 'bg-red-50' },
+  system_maintenance:       { label: 'صيانة',           color: 'text-amber-700',  icon: Settings2,     bg: 'bg-amber-50' },
+  system_update:            { label: 'تحديث',           color: 'text-blue-700',   icon: Bell,          bg: 'bg-blue-50' },
+  system_security_alert:    { label: 'تنبيه أمان',      color: 'text-red-700',    icon: Shield,        bg: 'bg-red-50' },
+  system_backup_completed:  { label: 'نسخة احتياطية',   color: 'text-emerald-700',icon: Database,      bg: 'bg-emerald-50' },
+  system_error:             { label: 'خطأ نظام',        color: 'text-red-700',    icon: XCircle,       bg: 'bg-red-50' },
   // التقييم
-  evaluation_pending:   { label: 'تقييم قيد الانتظار', color: 'text-amber-700', icon: FileText, bg: 'bg-amber-50' },
-  evaluation_completed: { label: 'تم التقييم', color: 'text-emerald-700', icon: CheckCircle,    bg: 'bg-emerald-50' },
-  evaluation_reminder:  { label: 'تذكير تقييم', color: 'text-blue-700',   icon: Bell,          bg: 'bg-blue-50' },
+  evaluation_pending:   { label: 'تقييم قيد الانتظار', color: 'text-amber-700', icon: FileText,    bg: 'bg-amber-50' },
+  evaluation_completed: { label: 'تم التقييم',         color: 'text-emerald-700',icon: CheckCircle, bg: 'bg-emerald-50' },
+  evaluation_reminder:  { label: 'تذكير تقييم',        color: 'text-blue-700',   icon: Bell,        bg: 'bg-blue-50' },
   // الرواتب
-  salary_paid:       { label: 'صرف راتب',   color: 'text-emerald-700', icon: CreditCard,   bg: 'bg-emerald-50' },
-  salary_slip_ready: { label: 'كعب راتب',   color: 'text-blue-700',    icon: CreditCard,   bg: 'bg-blue-50' },
-  salary_bonus:      { label: 'مكافأة',     color: 'text-amber-700',   icon: Award,        bg: 'bg-amber-50' },
+  salary_paid:       { label: 'صرف راتب', color: 'text-emerald-700', icon: CreditCard, bg: 'bg-emerald-50' },
+  salary_slip_ready: { label: 'كعب راتب', color: 'text-blue-700',    icon: CreditCard, bg: 'bg-blue-50' },
+  salary_bonus:      { label: 'مكافأة',   color: 'text-amber-700',   icon: Award,      bg: 'bg-amber-50' },
   // خاص بالمطورين
-  developer_deploy_ready: { label: 'جاهز للنشر', color: 'text-cyan-700', icon: Zap,     bg: 'bg-cyan-50' },
-  developer_db_backup:    { label: 'نسخة DB',    color: 'text-blue-700',  icon: Database,  bg: 'bg-blue-50' },
-  developer_api_error:    { label: 'خطأ API',    color: 'text-red-700',   icon: Bug,       bg: 'bg-red-50' },
+  developer_deploy_ready: { label: 'جاهز للنشر', color: 'text-cyan-700', icon: Zap,      bg: 'bg-cyan-50' },
+  developer_db_backup:    { label: 'نسخة DB',    color: 'text-blue-700', icon: Database, bg: 'bg-blue-50' },
+  developer_api_error:    { label: 'خطأ API',    color: 'text-red-700',  icon: Bug,      bg: 'bg-red-50' },
 };
 
+// Fallback آمن عند وصول نوع غير معروف
+const DEFAULT_META: TypeMeta = TYPE_META.info ?? {
+  label: 'إشعار', color: 'text-blue-700', icon: Bell, bg: 'bg-blue-50',
+};
+
+const getTypeMeta = (type: string): TypeMeta => TYPE_META[type] ?? DEFAULT_META;
+
 const FILTER_OPTIONS: { value: NotificationFilter; label: string; icon: React.ComponentType<any> }[] = [
-  { value: 'all', label: 'الكل', icon: Layers },
-  { value: 'unread', label: 'غير مقروء', icon: Bell },
-  { value: 'info', label: 'معلومات', icon: Info },
-  { value: 'success', label: 'نجاح', icon: CheckCircle },
-  { value: 'warning', label: 'تحذير', icon: AlertTriangle },
-  { value: 'error', label: 'خطأ', icon: AlertCircle },
-  { value: 'system', label: 'نظام', icon: Bell },
-  { value: 'welcome', label: 'ترحيب', icon: Sparkles },
+  { value: 'all',      label: 'الكل',        icon: Layers },
+  { value: 'unread',   label: 'غير مقروء',   icon: Bell },
+  { value: 'info',     label: 'معلومات',     icon: Info },
+  { value: 'success',  label: 'نجاح',        icon: CheckCircle },
+  { value: 'warning',  label: 'تحذير',       icon: AlertTriangle },
+  { value: 'error',    label: 'خطأ',         icon: AlertCircle },
+  { value: 'system',   label: 'نظام',        icon: Bell },
+  { value: 'welcome',  label: 'ترحيب',       icon: Sparkles },
 ];
+
+// ════════════════════════════════════════════════════════════════
+//  المكون الرئيسي
+// ════════════════════════════════════════════════════════════════
 
 export default function MyNotificationsPage() {
   const { user } = useAuthStore();
   const { setActiveView } = useUIStore();
+
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [filter, setFilter] = useState<NotificationFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // ─── جلب الإشعارات من الخادم + الاشتراك في Realtime ──────────
+  const loadNotifications = useCallback(async (userId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchNotificationsFromServer(userId, 100);
+      setNotifications(data);
+      // تحديث الكاش المحلي (localStorage) من مصدر الحقيقة
+      syncNotificationsFromServer(userId, data).catch(() => {
+        /* الكاش فشل = غير حرج، تجاهل بصمت */
+      });
+    } catch (err) {
+      console.error('[MyNotificationsPage] فشل جلب الإشعارات:', err);
+      setError(err instanceof Error ? err.message : 'تعذّر تحميل الإشعارات من الخادم');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user?.id) {
@@ -170,42 +222,138 @@ export default function MyNotificationsPage() {
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setNotifications(getUserNotifications(user.id));
-    setLoading(false);
 
-    // ✅ الاشتراك في أحداث النظام المحلية (نفس الـ tab)
-    const unsubscribeLocal = subscribeToUserNotifications(user.id, (_event: NotificationEvent) => {
-      setNotifications(getUserNotifications(user.id));
-    });
+    let cancelled = false;
 
-    // ✅ الاشتراك في Realtime من Supabase
-    const unsubscribeRealtime = subscribeToRealtimeNotifications(user.id, (_newNotif: any) => {
-      setNotifications(getUserNotifications(user.id));
-    });
+    // ✅ الجلب الأولي من Supabase
+    loadNotifications(user.id);
 
-    // ✅ مزامنة عبر tabs
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === `hr_notifications_${user.id}`) {
-        setNotifications(getUserNotifications(user.id));
+    // ✅ الاشتراك في Realtime (يغطي نفس التبويب + التبويبات الأخرى)
+    const unsubscribeRealtime = subscribeToRealtimeNotifications(
+      user.id,
+      (newNotif: AppNotification) => {
+        if (cancelled) return;
+        // منع التكرار عبر id، ثم الإضافة لأعلى القائمة
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
       }
-    };
-    window.addEventListener('storage', handleStorage);
+    );
 
-    // ✅ الاستماع لحدث فتح هذه الصفحة (عند النقر على "عرض كل الإشعارات")
-    const handleOpenPage = () => {
-      setNotifications(getUserNotifications(user.id));
+    // ✅ تحديث عند العودة للتبويب (إعادة المزامنة من الخادم)
+    const handleFocus = () => {
+      if (!cancelled) loadNotifications(user.id);
     };
-    window.addEventListener('focus', handleOpenPage);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
-      unsubscribeLocal();
+      cancelled = true;
       unsubscribeRealtime();
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('focus', handleOpenPage);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [user?.id]);
+  }, [user?.id, loadNotifications]);
 
+  // ─── العمليات (Optimistic + Server + استرجاع عند الفشل) ───────
+
+  const handleMarkAsRead = useCallback(async (id: string) => {
+    if (!user?.id) return;
+    const prev = notifications;
+
+    // تحديث تفاؤلي فوري
+    setNotifications((cur) =>
+      cur.map((n) => (n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n))
+    );
+
+    try {
+      await markAsReadOnServer(user.id, id);
+    } catch (err) {
+      console.error('[markAsRead] فشل:', err);
+      setNotifications(prev); // استرجاع
+      setError('تعذّر تحديث حالة الإشعار على الخادم');
+    }
+  }, [user?.id, notifications]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    if (!user?.id) return;
+    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+
+    const snapshot = notifications;
+    const now = new Date().toISOString();
+
+    // تحديث تفاؤلي
+    setNotifications((cur) => cur.map((n) => (n.read ? n : { ...n, read: true, readAt: now })));
+    setActionLoading(true);
+
+    try {
+      await markAllAsReadOnServer(user.id);
+    } catch (err) {
+      console.error('[markAllAsRead] فشل:', err);
+      setNotifications(snapshot); // استرجاع
+      setError('تعذّر تحديث الإشعارات على الخادم');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [user?.id, notifications]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    if (!user?.id) return;
+    const snapshot = notifications;
+
+    // حذف تفاؤلي
+    setNotifications((cur) => cur.filter((n) => n.id !== id));
+
+    try {
+      await deleteNotificationOnServer(user.id, id);
+    } catch (err) {
+      console.error('[delete] فشل:', err);
+      setNotifications(snapshot); // استرجاع
+      setError('تعذّر حذف الإشعار من الخادم');
+    }
+  }, [user?.id, notifications]);
+
+  const handleClearAll = useCallback(async () => {
+    if (!user?.id) return;
+    if (notifications.length === 0) return;
+    if (!confirm('هل أنت متأكد من حذف جميع الإشعارات؟ لا يمكن التراجع.')) return;
+
+    const snapshot = notifications;
+    const ids = notifications.map((n) => n.id);
+
+    // حذف تفاؤلي للكل
+    setNotifications([]);
+    setActionLoading(true);
+
+    try {
+      // حذف كل عنصر على الخادم (يحترم RLS)
+      await Promise.all(ids.map((id) => deleteNotificationOnServer(user.id, id)));
+    } catch (err) {
+      console.error('[clearAll] فشل جزئي:', err);
+      // إعادة الجلب لاستعادة الوضع الحقيقي من الخادم
+      await loadNotifications(user.id);
+      setError('تعذّر حذف بعض الإشعارات؛ تمت إعادة المزامنة');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [user?.id, notifications, loadNotifications]);
+
+  // ─── التوجيه عند الضغط على الإشعار ───────────────────────────
+  const handleNotificationClick = useCallback((notif: AppNotification) => {
+    // تحديد كمقروء أولاً
+    if (!notif.read) {
+      handleMarkAsRead(notif.id);
+    }
+
+    // التوجيه (actionUrl الأولوية، ثم metadata.problemId)
+    if (notif.actionUrl) {
+      setActiveView(notif.actionUrl);
+    } else if (notif.metadata?.problemId) {
+      setActiveView(`problem-detail-${notif.metadata.problemId}`);
+    }
+  }, [handleMarkAsRead, setActiveView]);
+
+  // ─── المشتقات (فلاتر + بحث + إحصائيات + تجميع) ────────────────
   const displayedNotifications = useMemo(() => {
     let result = filterNotifications(notifications, filter);
     if (searchQuery.trim()) {
@@ -219,75 +367,29 @@ export default function MyNotificationsPage() {
 
   const stats = useMemo(() => calculateStats(notifications), [notifications]);
 
-  // ملاحظة: لا حاجة لـrefresh بعد الآن لأن event system يحدث الحالة تلقائياً
-
-  const handleMarkAsRead = (id: string) => {
-    if (!user?.id) return;
-    markAsRead(user.id, id);
-    markAsReadOnServer(user.id, id);
-  };
-
-  const handleMarkAllRead = () => {
-    if (!user?.id) return;
-    markAllAsRead(user.id);
-    markAllAsReadOnServer(user.id);
-  };
-
-  const handleDelete = (id: string) => {
-    if (!user?.id) return;
-    deleteNotification(user.id, id);
-    deleteNotificationOnServer(user.id, id);
-  };
-
-  const handleClearAll = () => {
-    if (!user?.id) return;
-    if (!confirm('هل أنت متأكد من حذف جميع الإشعارات؟')) return;
-    clearAllNotifications(user.id);
-  };
-
-  // ✅ دالة التوجيه عند الضغط على الإشعار
-  const handleNotificationClick = (notif: AppNotification) => {
-    if (!user?.id) return;
-    
-    // تحديد كمقروء
-    if (!notif.read) {
-      handleMarkAsRead(notif.id);
-    }
-    
-    // التوجيه بناءً على actionUrl أو المیتاداتا
-    if (notif.actionUrl) {
-      setActiveView(notif.actionUrl);
-    } else if (notif.metadata?.problemId) {
-      setActiveView(`problem-detail-${notif.metadata.problemId}`);
-    } else if (notif.type === 'problem_created' || notif.type === 'problem_updated' || 
-               notif.type === 'problem_comment' || notif.type === 'problem_resolved' ||
-               notif.type === 'problem_reopened' || notif.type === 'problem_overdue') {
-      // محاولة استخراج problemId من العنوان أو أي مكان آخر
-      if (notif.metadata?.problemId) {
-        setActiveView(`problem-detail-${notif.metadata.problemId}`);
-      }
-    }
-  };
-
   const groupedNotifications = useMemo(() => {
     const groups: Record<string, AppNotification[]> = {};
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+
     displayedNotifications.forEach((notif) => {
       const date = new Date(notif.createdAt);
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
-
       let key: string;
       if (date.toDateString() === today.toDateString()) key = 'اليوم';
       else if (date.toDateString() === yesterday.toDateString()) key = 'أمس';
-      else if (today.getTime() - date.getTime() < 7 * 24 * 60 * 60 * 1000) key = 'هذا الأسبوع';
+      else if (today.getTime() - date.getTime() < weekMs) key = 'هذا الأسبوع';
       else key = 'أقدم';
 
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(notif);
+      (groups[key] ??= []).push(notif);
     });
     return groups;
   }, [displayedNotifications]);
+
+  // ════════════════════════════════════════════════════════════════
+  //  العرض
+  // ════════════════════════════════════════════════════════════════
 
   if (!user) {
     return (
@@ -302,6 +404,7 @@ export default function MyNotificationsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-10 animate-fade-in" dir="rtl">
+      {/* ─── الرأس + الإحصائيات ─── */}
       <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-5 sm:p-6 text-white shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -314,13 +417,34 @@ export default function MyNotificationsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              onClick={() => loadNotifications(user.id)}
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw size={16} className={loading ? 'animate-spin' : ''} />}
+              disabled={loading}
+            >
+              تحديث
+            </Button>
             {stats.unread > 0 && (
-              <Button onClick={handleMarkAllRead} variant="secondary" size="sm" icon={<CheckCheck size={16} />}>
+              <Button
+                onClick={handleMarkAllRead}
+                variant="secondary"
+                size="sm"
+                icon={<CheckCheck size={16} className={actionLoading ? 'animate-pulse' : ''} />}
+                disabled={actionLoading}
+              >
                 تحديد الكل كمقروء ({stats.unread})
               </Button>
             )}
             {notifications.length > 0 && (
-              <Button onClick={handleClearAll} variant="danger" size="sm" icon={<Trash2 size={16} />}>
+              <Button
+                onClick={handleClearAll}
+                variant="danger"
+                size="sm"
+                icon={<Trash2 size={16} />}
+                disabled={actionLoading}
+              >
                 حذف الكل
               </Button>
             )}
@@ -331,8 +455,8 @@ export default function MyNotificationsPage() {
           {[
             { label: 'إجمالي', value: stats.total, color: 'from-white/20 to-white/10', highlight: false },
             { label: 'غير مقروء', value: stats.unread, color: 'from-amber-400/30 to-amber-500/20', highlight: true },
-            { label: 'نجاح', value: stats.byType.success || 0, color: 'from-emerald-400/30 to-emerald-500/20', highlight: false },
-            { label: 'تحذيرات', value: (stats.byType.warning || 0) + (stats.byType.error || 0), color: 'from-rose-400/30 to-rose-500/20', highlight: false },
+            { label: 'نجاح', value: stats.byType?.success || 0, color: 'from-emerald-400/30 to-emerald-500/20', highlight: false },
+            { label: 'تحذيرات', value: (stats.byType?.warning || 0) + (stats.byType?.error || 0), color: 'from-rose-400/30 to-rose-500/20', highlight: false },
           ].map((s, i) => (
             <div
               key={i}
@@ -347,6 +471,7 @@ export default function MyNotificationsPage() {
         </div>
       </div>
 
+      {/* ─── شريط البحث والفلاتر ─── */}
       <Card>
         <div className="space-y-3">
           <div className="relative">
@@ -379,7 +504,7 @@ export default function MyNotificationsPage() {
                   ? stats.total
                   : opt.value === 'unread'
                   ? stats.unread
-                  : stats.byType[opt.value as NotificationType] || 0;
+                  : stats.byType?.[opt.value as NotificationType] || 0;
               return (
                 <button
                   key={opt.value}
@@ -404,10 +529,29 @@ export default function MyNotificationsPage() {
         </div>
       </Card>
 
+      {/* ─── شريط الخطأ ─── */}
+      {error && (
+        <Card>
+          <div className="flex items-center justify-between gap-3 p-2">
+            <div className="flex items-center gap-2 text-red-600 text-sm">
+              <AlertCircle size={16} className="flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={() => { setError(null); loadNotifications(user.id); }}
+              className="text-sm text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1"
+            >
+              <RefreshCw size={14} /> إعادة المحاولة
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* ─── محتوى القائمة ─── */}
       {loading ? (
         <div className="text-center py-20">
           <div className="w-10 h-10 mx-auto border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin" />
-          <p className="text-slate-400 mt-3 text-sm">جاري التحميل...</p>
+          <p className="text-slate-400 mt-3 text-sm">جاري تحميل الإشعارات...</p>
         </div>
       ) : displayedNotifications.length === 0 ? (
         <Card>
@@ -416,7 +560,11 @@ export default function MyNotificationsPage() {
               <Inbox size={36} className="text-slate-300" />
             </div>
             <h3 className="text-lg font-bold text-slate-600 mb-2">
-              {searchQuery ? 'لا توجد نتائج للبحث' : filter !== 'all' ? 'لا توجد إشعارات بهذا التصنيف' : 'لا توجد إشعارات حالياً'}
+              {searchQuery
+                ? 'لا توجد نتائج للبحث'
+                : filter !== 'all'
+                ? 'لا توجد إشعارات بهذا التصنيف'
+                : 'لا توجد إشعارات حالياً'}
             </h3>
             <p className="text-slate-400 text-sm">
               {searchQuery ? 'جرب كلمات بحث أخرى' : 'ستظهر إشعاراتك هنا عند ورودها'}
@@ -444,7 +592,7 @@ export default function MyNotificationsPage() {
 
               <div className="space-y-2">
                 {items.map((notif) => {
-                  const meta = TYPE_META[notif.type];
+                  const meta = getTypeMeta(notif.type);
                   const Icon = meta.icon;
                   return (
                     <div
@@ -490,7 +638,7 @@ export default function MyNotificationsPage() {
                               {format(new Date(notif.createdAt), 'HH:mm', { locale: ar })}
                             </span>
                             {notif.read && notif.readAt && (
-                              <span className='flex items-center gap-1 text-emerald-600'>
+                              <span className="flex items-center gap-1 text-emerald-600">
                                 <CheckCheck size={10} />
                                 تم القراءة: {format(new Date(notif.readAt), 'dd MMM', { locale: ar })}
                               </span>

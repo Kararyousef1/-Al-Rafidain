@@ -1,3 +1,21 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  App - الجذر الرئيسي (نسخة مُصلحة — Mobile/Tablet P0)
+ * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة (المرحلة 4 P0):
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ إزالة wrapper المتعارض مع fixed positioning للـ Sidebar
+ *  ✅ إضافة backdrop معتم على الموبايل (يغلق Sidebar عند النقر)
+ *  ✅ Sidebar مغلق افتراضياً على الموبايل، مفتوح على الديسكتوب
+ *  ✅ إغلاق تلقائي عند تصغير النافذة تحت lg
+ *  ✅ توحيد breakpoints على lg (Sidebar + المحتوى)
+ *  ✅ تنظيف markdown artifacts (window.location.search, <style>)
+ *  ✅ ترتيب DOM: Header ← Sidebar ← backdrop ← Content
+ *     (Sidebar يظهر فوق Header عند الفتح عبر z-50)
+ *  ════════════════════════════════════════════════════════════════
+ */
+
 import { useEffect, Suspense, lazy, useState } from 'react';
 import { useAuthStore, useUIStore } from './store';
 import ToastContainer from './components/ui/Toast';
@@ -9,9 +27,10 @@ import DisclaimerPage from './pages/public/DisclaimerPage';
 import SystemGuide from './pages/public/SystemGuide';
 import NotificationsPage from './pages/public/NotificationsPage';
 import MyNotificationsPage from './pages/public/MyNotificationsPage';
+import WelcomeModal from './components/dashboard/WelcomeModal';
+
 const StructureManager = lazy(() => import('./components/dashboard/developer').then(m => ({ default: m.StructureManager })));
 const BiometricPage = lazy(() => import('./components/dashboard/developer').then(m => ({ default: m.BiometricSettings })));
-import WelcomeModal from './components/dashboard/WelcomeModal';
 
 const EmployeeDashboard = lazy(() => import('./pages/employee/EmployeeDashboard'));
 const ProblemsList      = lazy(() => import('./pages/employee/ProblemsList'));
@@ -53,12 +72,18 @@ const PermissionsPage = lazy(() => import('./pages/employee/PermissionsPage'));
 const ManagerAttendancePage = lazy(() => import('./pages/manager/ManagerAttendancePage'));
 const AIInsightsDashboard = lazy(() => import('./pages/employee/AIInsightsDashboard'));
 
+// ════════════════════════════════════════════════════════════════
+//  Loaders
+// ════════════════════════════════════════════════════════════════
+
+const SPIN_KEYFRAMES = `@keyframes spin { to { transform: rotate(360deg); } }`;
+
 function PageLoader() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: '16px' }}>
       <div style={{ width: '40px', height: '40px', border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>جاري التحميل...</p>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{SPIN_KEYFRAMES}</style>
     </div>
   );
 }
@@ -68,7 +93,7 @@ function AuthLoader() {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f8fafc', flexDirection: 'column', gap: '16px' }}>
       <div style={{ width: '48px', height: '48px', border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       <p style={{ color: '#64748b' }}>جاري التحقق من الجلسة...</p>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{SPIN_KEYFRAMES}</style>
     </div>
   );
 }
@@ -80,6 +105,10 @@ function DefaultPage({ role }: { role?: string }) {
   if (role === 'gatekeeper') return <GatekeeperPage />;
   return <EmployeeDashboard />;
 }
+
+// ════════════════════════════════════════════════════════════════
+//  Page Renderer
+// ════════════════════════════════════════════════════════════════
 
 function PageRenderer() {
   const { activeView, sidebarOpen } = useUIStore();
@@ -150,8 +179,9 @@ function PageRenderer() {
     }
   };
 
+  // ✅ المحتوى يتحرك فقط على lg+ (ديسكتوب). على الموبايل/التابلت الـ Sidebar يتراكب (overlay)
   return (
-    <div className={`transition-all duration-300 min-h-screen pt-16 ${sidebarOpen ? 'md:mr-64' : 'md:mr-16'} mr-0`}>
+    <div className={`transition-all duration-300 min-h-screen pt-16 ${sidebarOpen ? 'lg:mr-64' : 'lg:mr-16'}`}>
       <main className="p-4 sm:p-6 min-h-[calc(100vh-64px)]">
         <Suspense fallback={<PageLoader />}>{renderPage()}</Suspense>
       </main>
@@ -159,22 +189,46 @@ function PageRenderer() {
   );
 }
 
+// ════════════════════════════════════════════════════════════════
+//  App
+// ════════════════════════════════════════════════════════════════
+
 export default function App() {
   const { isAuthenticated, user, loading, initialize } = useAuthStore();
-  const { activeView, setActiveView, sidebarOpen } = useUIStore();
+  const { activeView, setActiveView, sidebarOpen, setSidebarOpen } = useUIStore();
   const [showLogin, setShowLogin] = useState(false);
   const [disclaimerPassed, setDisclaimerPassed] = useState(() => sessionStorage.getItem('disclaimer_passed') === 'true');
   const [guidePassed, setGuidePassed] = useState(() => sessionStorage.getItem('guide_passed') === 'true');
   const isPreviewMode = window.location.search.includes('preview=true');
 
   useEffect(() => { if (!isPreviewMode) initialize(); }, [isPreviewMode, initialize]);
+
+  // ✅ ضبط الـ Sidebar: مفتوح على الديسكتوب، مغلق على الموبايل
+  useEffect(() => {
+    setSidebarOpen(window.innerWidth >= 1024);
+  }, [setSidebarOpen]);
+
+  // ✅ إغلاق تلقائي عند تصغير النافذة إلى الموبايل/التابلت
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) setSidebarOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [setSidebarOpen]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('view') === 'kiosk-mode') setActiveView('kiosk-mode');
   }, [setActiveView]);
+
   useEffect(() => {
     if (!user) return;
-    const views: Record<string, string> = { developer: 'developer-dashboard', hr: 'hr-dashboard', admin: 'admin-dashboard', employee: 'employee-dashboard', gatekeeper: 'gatekeeper-portal', supervisor: 'employee-dashboard', manager: 'manager-dashboard' };
+    const views: Record<string, string> = {
+      developer: 'developer-dashboard', hr: 'hr-dashboard', admin: 'admin-dashboard',
+      employee: 'employee-dashboard', gatekeeper: 'gatekeeper-portal',
+      supervisor: 'employee-dashboard', manager: 'manager-dashboard',
+    };
     setActiveView(views[user.role] ?? 'employee-dashboard');
   }, [user?.role, setActiveView]);
 
@@ -194,8 +248,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50" dir="rtl" style={{ fontFamily: "'Tajawal', 'Cairo', sans-serif" }}>
-      <div className={sidebarOpen ? 'block relative z-[100]' : 'hidden md:block'}><Sidebar /></div>
+      {/* ✅ Header أولاً في DOM (الأساس) */}
       <Header />
+
+      {/* ✅ Sidebar يُرسم فوق Header عبر z-50 */}
+      <Sidebar />
+
+      {/* ✅ Backdrop معتم على الموبايل/التابلت فقط (يغلق Sidebar عند النقر) */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden animate-in fade-in duration-200"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       <PageRenderer />
       <WelcomeModal />
       <ToastContainer />

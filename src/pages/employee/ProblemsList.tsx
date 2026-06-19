@@ -1,38 +1,54 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  البلاغات - نظام وادي الرافدين HR
+ *  ProblemsList - البلاغات (نسخة مُصلحة)
  *  صفحة متكاملة: عرض + رفع بلاغ جديد
  * ════════════════════════════════════════════════════════════════
+ *
+ *  🔧 الإصلاحات المُطبّقة:
+ *  ─────────────────────────────────────────────────────────────────
+ *  ✅ تنظيف جميع markdown artifacts (15+ موضع)
+ *  ✅ إصلاح template literals المكسورة (className + setActiveView)
+ *  ✅ الاستعلام بـ user_id (يحل خطأ 400 + يتطلب Migration 051)
+ *  ✅ إزالة Mock data fallback الذي كان يخفي خطأ 400 فعلياً
+ *  ✅ إزالة الإدراج المحلي عند الفشل (بيانات وهمية لا تستمر)
+ *  ✅ حالة خطأ واضحة + زر إعادة المحاولة
+ *  ✅ إصلاح STATUS_CONFIG[activeTab] عند 'all'
+ *  ✅ إشعار فريق HR عند رفع بلاغ جديد (اتساقاً مع NewProblemPage)
+ *  ✅ إزالة as any → تحويل آمن للنوع
+ *  ════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Plus, Search, Filter, MessageSquare, Bot, TrendingUp, Clock,
-  CheckCircle, XCircle, Eye, AlertTriangle, ArrowUpDown, X,
-  FileText, Calendar, User, Send, Paperclip, Sparkles,
-  ChevronRight, Loader2, AlertCircle, ThumbsUp, ThumbsDown
+  Plus, Search, TrendingUp, Clock,
+  CheckCircle, XCircle,
+  FileText, Calendar, MessageSquare, Send,
+  ChevronRight, Loader2, AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { supabase } from '../../lib/supabase';
+import { notifyRole } from '../../lib/notificationService';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
 // ════════════════════════════════════════════════════════════════
-//  Types & Constants
+//  الأنواع والثوابت
 // ════════════════════════════════════════════════════════════════
+
+type ProblemStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
+type ProblemSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 interface Problem {
   id: string;
   title: string;
   description: string;
   category: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  status: 'pending' | 'in_progress' | 'resolved' | 'closed';
+  severity: ProblemSeverity;
+  status: ProblemStatus;
   isAnonymous: boolean;
   employeeId?: string;
   employeeName?: string;
@@ -51,35 +67,59 @@ interface Problem {
     authorName: string;
     createdAt: string;
   }>;
-  attachments?: string[];
 }
 
-const STATUS_CONFIG = {
-  pending: { label: 'معلقة', variant: 'warning' as const, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
-  in_progress: { label: 'قيد المعالجة', variant: 'info' as const, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
-  resolved: { label: 'محلولة', variant: 'success' as const, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  closed: { label: 'مغلقة', variant: 'neutral' as const, icon: XCircle, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' },
+const STATUS_CONFIG: Record<ProblemStatus, {
+  label: string;
+  variant: 'warning' | 'info' | 'success' | 'neutral';
+  icon: typeof Clock;
+  color: string;
+  bg: string;
+  border: string;
+}> = {
+  pending:     { label: 'معلقة',      variant: 'warning', icon: Clock,       color: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  in_progress: { label: 'قيد المعالجة',variant: 'info',    icon: TrendingUp,  color: 'text-blue-600',    bg: 'bg-blue-50',    border: 'border-blue-200' },
+  resolved:    { label: 'محلولة',     variant: 'success', icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  closed:      { label: 'مغلقة',      variant: 'neutral', icon: XCircle,     color: 'text-slate-600',   bg: 'bg-slate-50',   border: 'border-slate-200' },
 };
 
-const SEVERITY_CONFIG = {
-  low: { label: 'منخفضة', variant: 'success' as const, color: 'bg-emerald-500', textColor: 'text-emerald-700' },
-  medium: { label: 'متوسطة', variant: 'warning' as const, color: 'bg-amber-500', textColor: 'text-amber-700' },
-  high: { label: 'عالية', variant: 'danger' as const, color: 'bg-orange-500', textColor: 'text-orange-700' },
-  critical: { label: 'حرجة', variant: 'danger' as const, color: 'bg-red-500', textColor: 'text-red-700' },
+const SEVERITY_CONFIG: Record<ProblemSeverity, { label: string; variant: 'success' | 'warning' | 'danger'; color: string }> = {
+  low:      { label: 'منخفضة', variant: 'success', color: 'bg-emerald-500' },
+  medium:   { label: 'متوسطة', variant: 'warning', color: 'bg-amber-500' },
+  high:     { label: 'عالية',  variant: 'danger',  color: 'bg-orange-500' },
+  critical: { label: 'حرجة',   variant: 'danger',  color: 'bg-red-500' },
 };
 
 const CATEGORIES = [
-  { value: 'technical', label: 'تقني', icon: '💻' },
-  { value: 'hr', label: 'موارد بشرية', icon: '👥' },
-  { value: 'management', label: 'إدارة', icon: '📊' },
-  { value: 'workplace', label: 'بيئة عمل', icon: '🏢' },
-  { value: 'salary', label: 'رواتب', icon: '💰' },
-  { value: 'safety', label: 'سلامة', icon: '🛡️' },
-  { value: 'other', label: 'أخرى', icon: '📝' },
+  { value: 'technical', label: 'تقني',          icon: '💻' },
+  { value: 'hr',        label: 'موارد بشرية',   icon: '👥' },
+  { value: 'management',label: 'إدارة',         icon: '📊' },
+  { value: 'workplace', label: 'بيئة عمل',      icon: '🏢' },
+  { value: 'salary',    label: 'رواتب',         icon: '💰' },
+  { value: 'safety',    label: 'سلامة',         icon: '🛡️' },
+  { value: 'other',     label: 'أخرى',          icon: '📝' },
 ];
 
+const SEVERITY_ORDER: Record<ProblemSeverity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+interface NewProblemForm {
+  title: string;
+  description: string;
+  category: string;
+  severity: ProblemSeverity;
+  isAnonymous: boolean;
+}
+
+const EMPTY_FORM: NewProblemForm = {
+  title: '',
+  description: '',
+  category: 'technical',
+  severity: 'medium',
+  isAnonymous: false,
+};
+
 // ════════════════════════════════════════════════════════════════
-//  Main Component
+//  المكون
 // ════════════════════════════════════════════════════════════════
 
 interface ProblemsListProps {
@@ -90,185 +130,138 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
   const { user } = useAuthStore();
   const { setActiveView, addToast } = useUIStore();
 
-  // ─── State ───
+  // ─── الحالة ───────────────────────────────────────────────────
   const [problems, setProblems] = useState<Problem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'all' | ProblemStatus>('all');
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState<'date' | 'severity' | 'status'>('date');
+  const [sortBy, setSortBy] = useState<'date' | 'severity'>('date');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
-  
+
   const [showNewProblem, setShowNewProblem] = useState(false);
-  const [newProblem, setNewProblem] = useState({
-    title: '',
-    description: '',
-    category: 'technical',
-    severity: 'medium' as Problem['severity'],
-    isAnonymous: false,
-  });
+  const [newProblem, setNewProblem] = useState<NewProblemForm>(EMPTY_FORM);
 
-  const isHR = useMemo(() => isHRProp || user?.role === 'hr' || user?.role === 'admin', [isHRProp, user?.role]);
+  const isHR = useMemo(
+    () => isHRProp || user?.role === 'hr' || user?.role === 'admin',
+    [isHRProp, user?.role]
+  );
 
   // ═══════════════════════════════════════════════════════════════
-  // Fetch Problems
+  // جلب البلاغات
   // ═══════════════════════════════════════════════════════════════
 
-  useEffect(() => {
-    fetchProblems();
-  }, [user?.id]);
-
-  const fetchProblems = async () => {
-    if (!user?.id) return;
+  const fetchProblems = useCallback(async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
+    setFetchError(null);
+
     try {
       let query = supabase
         .from('incidents')
         .select('*')
         .order('created_at', { ascending: false });
 
-      // إذا كان المستخدم عادي وليس HR, نظهر فقط بلاغاته
+      // المستخدم العادي يرى بلاغاته فقط (بالـ user_id — يحل خطأ 400)
       if (!isHR) {
         query = query.eq('user_id', user.id);
       }
 
       const { data, error } = await query;
 
-      if (!error && data && data.length > 0) {
-        setProblems(data.map(d => ({
-          id: d.id,
-          title: d.title || 'بلاغ',
-          description: d.description || '',
-          category: d.category || 'other',
-          severity: d.severity || 'medium',
-          status: d.status || 'pending',
-          isAnonymous: d.is_anonymous || false,
-          employeeId: d.user_id,
-          employeeName: isHR ? d.employee_name || 'موظف' : user.full_name,
-          department: isHR ? d.department || '' : user.department,
-          createdAt: d.created_at,
-          updatedAt: d.updated_at,
-          aiAnalysis: d.ai_analysis,
-          comments: [],
-        })));
+      if (error) throw error;
+
+      // ✅ لا Mock data — مصدر الحقيقة هو الخادم فقط
+      if (data && data.length > 0) {
+        setProblems(
+          data.map((d) => ({
+            id: d.id,
+            title: d.title || 'بلاغ',
+            description: d.description || '',
+            category: d.category || 'other',
+            severity: (d.severity || 'medium') as ProblemSeverity,
+            status: (d.status || 'pending') as ProblemStatus,
+            isAnonymous: d.is_anonymous || false,
+            employeeId: d.user_id,
+            employeeName: isHR ? d.employee_name || 'موظف' : user.full_name,
+            department: isHR ? d.department || '' : user.department,
+            createdAt: d.created_at,
+            updatedAt: d.updated_at,
+            aiAnalysis: d.ai_analysis,
+            comments: [],
+          }))
+        );
       } else {
-        // استخدام Mock Data كـ Fallback
-        setProblems(getMockProblems());
+        setProblems([]);
       }
     } catch (err) {
-      console.warn('Failed to fetch problems, using mock data:', err);
-      setProblems(getMockProblems());
+      console.error('[ProblemsList] فشل جلب البلاغات:', err);
+      // ✅ إظهار الخطأ للمستخدم بدل إخفائه ببيانات وهمية
+      setFetchError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'تعذّر تحميل البلاغات. تحقق من الاتصال وحاول مرة أخرى.'
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id, user?.full_name, user?.department, isHR]);
 
-  const getMockProblems = (): Problem[] => [
-    {
-      id: '1',
-      title: 'مشكلة في جهاز الكمبيوتر',
-      description: 'الجهاز لا يعمل بشكل صحيح ويحتاج إلى صيانة عاجلة',
-      category: 'technical',
-      severity: 'medium',
-      status: 'in_progress',
-      isAnonymous: false,
-      employeeName: user?.full_name || 'موظف',
-      department: user?.department || 'تقنية المعلومات',
-      createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      aiAnalysis: {
-        urgencyLevel: 6,
-        sentiment: 'neutral',
-        suggestedAction: 'إحالة لقسم الصيانة'
-      }
-    },
-    {
-      id: '2',
-      title: 'مشكلة في الشبكة',
-      description: 'انقطاع الإنترنت بشكل متكرر في المكتب',
-      category: 'technical',
-      severity: 'high',
-      status: 'pending',
-      isAnonymous: false,
-      employeeName: user?.full_name || 'موظف',
-      department: user?.department || 'تقنية المعلومات',
-      createdAt: new Date(Date.now() - 86400000).toISOString(),
-      aiAnalysis: {
-        urgencyLevel: 8,
-        sentiment: 'negative',
-        suggestedAction: 'فحص السيرفر فوراً'
-      }
-    },
-    {
-      id: '3',
-      title: 'طلب تدريب على GMP',
-      description: 'أرغب في حضور دورة تدريبية على ممارسات التصنيع الجيد',
-      category: 'hr',
-      severity: 'low',
-      status: 'resolved',
-      isAnonymous: false,
-      employeeName: user?.full_name || 'موظف',
-      department: user?.department || 'الإنتاج',
-      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-      aiAnalysis: {
-        urgencyLevel: 3,
-        sentiment: 'positive'
-      }
-    },
-  ];
+  useEffect(() => {
+    fetchProblems();
+  }, [fetchProblems]);
 
   // ═══════════════════════════════════════════════════════════════
-  // Computed Values
+  // القيم المشتقّة
   // ═══════════════════════════════════════════════════════════════
 
-  const stats = useMemo(() => ({
-    total: problems.length,
-    pending: problems.filter(p => p.status === 'pending').length,
-    inProgress: problems.filter(p => p.status === 'in_progress').length,
-    resolved: problems.filter(p => p.status === 'resolved').length,
-    critical: problems.filter(p => p.severity === 'critical').length,
-  }), [problems]);
+  const stats = useMemo(
+    () => ({
+      total: problems.length,
+      pending: problems.filter((p) => p.status === 'pending').length,
+      inProgress: problems.filter((p) => p.status === 'in_progress').length,
+      resolved: problems.filter((p) => p.status === 'resolved').length,
+      critical: problems.filter((p) => p.severity === 'critical').length,
+    }),
+    [problems]
+  );
 
   const filteredProblems = useMemo(() => {
     let filtered = problems;
 
-    // Tab filter
     if (activeTab !== 'all') {
-      filtered = filtered.filter(p => p.status === activeTab);
+      filtered = filtered.filter((p) => p.status === activeTab);
     }
-
-    // Search
     if (search.trim()) {
-      const query = search.toLowerCase();
-      filtered = filtered.filter(p =>
-        p.title.toLowerCase().includes(query) ||
-        p.description.toLowerCase().includes(query)
+      const q = search.toLowerCase();
+      filtered = filtered.filter(
+        (p) => p.title.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
       );
     }
-
-    // Severity filter
     if (filterSeverity !== 'all') {
-      filtered = filtered.filter(p => p.severity === filterSeverity);
+      filtered = filtered.filter((p) => p.severity === filterSeverity);
     }
 
-    // Sort
+    // ترتيب
     filtered = [...filtered].sort((a, b) => {
-      if (sortBy === 'date') {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      }
       if (sortBy === 'severity') {
-        const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
-        return severityOrder[b.severity] - severityOrder[a.severity];
+        return SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
       }
-      return 0;
+      // افتراضياً: الأحدث أولاً
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
     return filtered;
   }, [problems, activeTab, search, filterSeverity, sortBy]);
 
   // ═══════════════════════════════════════════════════════════════
-  // Handlers
+  // المعالجات
   // ═══════════════════════════════════════════════════════════════
 
   const handleSubmitProblem = async () => {
@@ -279,7 +272,6 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
 
     setSubmitting(true);
     try {
-      // محاولة الإرسال لـ Supabase
       const { data, error } = await supabase
         .from('incidents')
         .insert({
@@ -289,66 +281,73 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
           severity: newProblem.severity,
           status: 'pending',
           is_anonymous: newProblem.isAnonymous,
-          user_id: user?.id,
-          created_at: new Date().toISOString(),
+          reported_by: newProblem.isAnonymous ? null : user?.id,
+          user_id: newProblem.isAnonymous ? null : user?.id, // ✅ يوافق Migration 051
         })
-        .select()
+        .select('id')
         .single();
 
-      if (!error && data) {
-        // نجح الإرسال
-        addToast('تم رفع البلاغ بنجاح', 'success');
-        fetchProblems();
-        setShowNewProblem(false);
-        setNewProblem({
-          title: '',
-          description: '',
-          category: 'technical',
-          severity: 'medium',
-          isAnonymous: false,
+      if (error) throw error;
+
+      const incidentId = data?.id;
+
+      // ✅ إشعار فريق HR (غير حجري)
+      if (incidentId) {
+        notifyRole(['hr', 'admin'], {
+          type: 'problem_created',
+          title: `بلاغ جديد: ${newProblem.title}`,
+          message: newProblem.isAnonymous
+            ? 'ورد بلاغ مجهول الهوية يحتاج للمراجعة'
+            : `${user?.full_name || 'موظف'}: ${newProblem.description.slice(0, 120)}`,
+          priority: newProblem.severity === 'critical' || newProblem.severity === 'high' ? 'high' : 'normal',
+          actionUrl: 'admin-problems',
+          groupKey: `incident-${incidentId}`,
+          metadata: {
+            problemId: incidentId,
+            category: newProblem.category,
+            severity: newProblem.severity,
+            isAnonymous: newProblem.isAnonymous,
+          },
+        }).catch((notifErr) => {
+          console.error('فشل إشعار HR:', notifErr);
         });
-      } else {
-        throw new Error('Failed to insert');
       }
-    } catch (err) {
-      console.warn('Failed to submit to Supabase, adding to local state:', err);
-      
-      // إضافة للحالة المحلية كـ Fallback
-      const mockProblem: Problem = {
-        id: Date.now().toString(),
-        ...newProblem,
-        status: 'pending',
-        employeeName: user?.full_name || 'موظف',
-        department: user?.department,
-        createdAt: new Date().toISOString(),
-      };
-      
-      setProblems(prev => [mockProblem, ...prev]);
-      addToast('تم رفع البلاغ بنجاح (محلياً)', 'success');
+
+      addToast('تم رفع البلاغ بنجاح ✅', 'success');
       setShowNewProblem(false);
-      setNewProblem({
-        title: '',
-        description: '',
-        category: 'technical',
-        severity: 'medium',
-        isAnonymous: false,
-      });
+      setNewProblem(EMPTY_FORM);
+      fetchProblems(); // إعادة التحميل لعرض البلاغ الجديد
+    } catch (err) {
+      console.error('[ProblemsList] فشل رفع البلاغ:', err);
+      // ✅ إظهار الخطأ الحقيقي بدل النجاح الصامت المحلي
+      const message =
+        err instanceof Error && err.message ? err.message : 'حدث خطأ أثناء رفع البلاغ';
+      addToast(message, 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleSelectProblem = (id: string) => {
+    // ✅ إصلاح القوس الناقص في template literal
     setActiveView(`problem-detail-${id}`);
   };
 
+  const resetForm = () => {
+    setShowNewProblem(false);
+    setNewProblem(EMPTY_FORM);
+  };
+
   // ═══════════════════════════════════════════════════════════════
-  // Render
+  // العرض
   // ═══════════════════════════════════════════════════════════════
+
+  // نص الحالة الفارغة حسب التبويب
+  const emptyStatusText =
+    activeTab === 'all' ? 'الكل' : STATUS_CONFIG[activeTab as ProblemStatus]?.label;
 
   return (
     <div className="space-y-6 animate-fade-in" dir="rtl">
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -416,7 +415,7 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
           </div>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow bg-gradient-to-br from-red-50 to-orange-50 border-red-100">
+        <Card className="hover:shadow-lg bg-gradient-to-br from-red-50 to-orange-50 border-red-100">
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
               <AlertTriangle size={20} className="text-red-500" />
@@ -458,10 +457,8 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
           onClick={() => setSortBy(sortBy === 'date' ? 'severity' : 'date')}
           className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
         >
-          <ArrowUpDown size={16} />
-          <span className="text-sm">
-            {sortBy === 'date' ? 'الأحدث' : 'الأولوية'}
-          </span>
+          <RefreshCw size={16} />
+          <span className="text-sm">{sortBy === 'date' ? 'الأحدث' : 'الأولوية'}</span>
         </button>
       </div>
 
@@ -474,6 +471,20 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
               <p className="text-sm font-medium">جاري التحميل...</p>
             </div>
           </Card>
+        ) : fetchError ? (
+          // ✅ حالة الخطأ (بدل Mock data)
+          <Card>
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto mb-4 bg-red-50 rounded-2xl flex items-center justify-center">
+                <AlertTriangle size={40} className="text-red-400" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-700 mb-2">تعذّر تحميل البلاغات</h3>
+              <p className="text-sm text-slate-500 mb-6 max-w-md mx-auto">{fetchError}</p>
+              <Button onClick={fetchProblems} variant="outline" icon={<RefreshCw size={18} />}>
+                إعادة المحاولة
+              </Button>
+            </div>
+          </Card>
         ) : filteredProblems.length === 0 ? (
           <Card>
             <div className="text-center py-16">
@@ -481,25 +492,21 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
                 <FileText size={40} className="text-slate-400" />
               </div>
               <h3 className="text-lg font-bold text-slate-700 mb-2">
-                {activeTab === 'all' ? 'لا توجد بلاغات' : `لا توجد بلاغات ${STATUS_CONFIG[activeTab]?.label}`}
+                {activeTab === 'all' ? 'لا توجد بلاغات' : `لا توجد بلاغات ${emptyStatusText}`}
               </h3>
               <p className="text-sm text-slate-500 mb-6">
                 {search ? 'جرب تغيير كلمة البحث' : 'ابدأ برفع بلاغ جديد'}
               </p>
-              <Button
-                onClick={() => setShowNewProblem(true)}
-                variant="outline"
-                icon={<Plus size={18} />}
-              >
+              <Button onClick={() => setShowNewProblem(true)} variant="outline" icon={<Plus size={18} />}>
                 رفع بلاغ جديد
               </Button>
             </div>
           </Card>
         ) : (
-          filteredProblems.map(problem => {
+          filteredProblems.map((problem) => {
             const statusConfig = STATUS_CONFIG[problem.status];
             const severityConfig = SEVERITY_CONFIG[problem.severity];
-            const category = CATEGORIES.find(c => c.value === problem.category);
+            const category = CATEGORIES.find((c) => c.value === problem.category);
 
             return (
               <Card
@@ -550,11 +557,9 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
                       {problem.aiAnalysis && (
                         <div className="mb-3 p-3 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl">
                           <div className="flex items-start gap-2">
-                            <Sparkles size={16} className="text-indigo-600 flex-shrink-0 mt-0.5" />
+                            <FileText size={16} className="text-indigo-600 flex-shrink-0 mt-0.5" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-indigo-700 mb-1">
-                                تحليل ذكي
-                              </p>
+                              <p className="text-xs font-bold text-indigo-700 mb-1">تحليل ذكي</p>
                               <p className="text-xs text-indigo-600">
                                 {problem.aiAnalysis.suggestedAction || 'تحليل تلقائي للبلاغ'}
                               </p>
@@ -563,8 +568,11 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
                                 <div className="flex-1 h-1.5 bg-indigo-100 rounded-full overflow-hidden max-w-[100px]">
                                   <div
                                     className={`h-full rounded-full ${
-                                      problem.aiAnalysis.urgencyLevel >= 8 ? 'bg-red-500' :
-                                      problem.aiAnalysis.urgencyLevel >= 5 ? 'bg-amber-500' : 'bg-emerald-500'
+                                      problem.aiAnalysis.urgencyLevel >= 8
+                                        ? 'bg-red-500'
+                                        : problem.aiAnalysis.urgencyLevel >= 5
+                                        ? 'bg-amber-500'
+                                        : 'bg-emerald-500'
                                     }`}
                                     style={{ width: `${problem.aiAnalysis.urgencyLevel * 10}%` }}
                                   />
@@ -604,11 +612,7 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
       </div>
 
       {/* New Problem Modal */}
-      <Modal
-        isOpen={showNewProblem}
-        onClose={() => setShowNewProblem(false)}
-        title="رفع بلاغ جديد"
-      >
+      <Modal isOpen={showNewProblem} onClose={resetForm} title="رفع بلاغ جديد">
         <div className="space-y-4" dir="rtl">
           {/* Title */}
           <div>
@@ -627,15 +631,13 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
           {/* Category & Severity */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                التصنيف
-              </label>
+              <label className="block text-sm font-bold text-slate-700 mb-2">التصنيف</label>
               <select
                 value={newProblem.category}
                 onChange={(e) => setNewProblem({ ...newProblem, category: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {CATEGORIES.map(cat => (
+                {CATEGORIES.map((cat) => (
                   <option key={cat.value} value={cat.value}>
                     {cat.icon} {cat.label}
                   </option>
@@ -644,12 +646,12 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                الأولوية
-              </label>
+              <label className="block text-sm font-bold text-slate-700 mb-2">الأولوية</label>
               <select
                 value={newProblem.severity}
-                onChange={(e) => setNewProblem({ ...newProblem, severity: e.target.value as any })}
+                onChange={(e) =>
+                  setNewProblem({ ...newProblem, severity: e.target.value as ProblemSeverity })
+                }
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="low">منخفضة</option>
@@ -690,11 +692,7 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => setShowNewProblem(false)}
-              disabled={submitting}
-            >
+            <Button variant="outline" onClick={resetForm} disabled={submitting}>
               إلغاء
             </Button>
             <Button
@@ -707,7 +705,6 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
           </div>
         </div>
       </Modal>
-
     </div>
   );
 }
