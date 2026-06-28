@@ -19,6 +19,7 @@
 import { supabase } from './supabase';
 import { supabaseAdmin } from './supabaseAdmin';
 import { normalizeUser, normalizeRole } from '../utils/userUtils';
+import type { RawUserData } from '../utils/userUtils';
 import { getErrorMessage } from '../lib/errors';
 import type { User, UserRole } from '../types';
 import type { Session } from '@supabase/supabase-js';
@@ -330,13 +331,13 @@ export async function getUserProfile(userId: string): Promise<User | null> {
 
     const empRecord = emp as EmployeeRecord | null;
     if (empRecord && !empError && empRecord.user_id) {
-      const employeeData = {
+      const employeeData: RawUserData = {
         id: userId,
         user_id: empRecord.user_id,
         employee_id: empRecord.id,
         full_name: empRecord.full_name_ar || `${empRecord.first_name || ''} ${empRecord.last_name || ''}`.trim(),
         email: empRecord.email || '',
-        role: empRecord.role,
+        role: empRecord.role || 'employee',
         department: empRecord.departments?.name || null,
         position: empRecord.position || null,
         phone: empRecord.phone || null,
@@ -345,7 +346,7 @@ export async function getUserProfile(userId: string): Promise<User | null> {
         can_manage_breaks: empRecord.can_manage_breaks || false,
         created_at: empRecord.created_at,
         updated_at: empRecord.updated_at,
-        permissions: [],
+        permissions: [] as string[],
       };
       return normalizeUser(employeeData);
     }

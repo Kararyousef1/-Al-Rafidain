@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Clock, Download, MapPin, Coffee, LogIn, LogOut, Loader } from 'lucide-react';
-import { format, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
+import { Clock, Download, LogIn, LogOut, Loader } from 'lucide-react';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { useUIStore } from '../../store';
-import { fetchAllEmployees } from '../../sdk/employees';
 import { supabase } from '../../sdk/supabase';
 
 export default function AttendancePage() {
@@ -23,46 +22,38 @@ export default function AttendancePage() {
 
         // جلب جميع الموظفين وسجلات اليوم
         const [{ data: emps }, { data: logs }] = await Promise.all([
-          supabase.from('profiles').select('id, full_name, department'),
-          supabase.from('time_logs').select('*').gte('timestamp', todayStart).lte('timestamp', todayEnd)
+          supabase.from('employees').select('id, full_name_ar, department_id, is_active').eq('is_active', true),
+          supabase.from('attendance_logs').select('*').gte('punch_time', todayStart).lte('punch_time', todayEnd)
         ]);
+
+        // جلب أسماء الأقسام
+        const { data: depts } = await supabase.from('departments').select('id, name_ar');
+        const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
 
         if (!emps || !logs) return;
 
         // المعالجة والتحليل الدقيق للبيانات
-        const analyzed = emps.map(emp => {
-          const empLogs = logs.filter(l => l.employee_id === emp.id).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        const analyzed = emps.map((emp: { id: string; full_name_ar?: string; department_id?: string }) => {
+          const empLogs = logs.filter((l: { employee_id: string; punch_time: string; punch_type: string }) => l.employee_id === emp.id).sort((a: { punch_time: string }, b: { punch_time: string }) => new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime());
           
-          const checkIn = empLogs.find(l => l.log_type === 'check_in')?.timestamp;
-          const checkOut = empLogs.find(l => l.log_type === 'check_out')?.timestamp;
-          const breakStarts = empLogs.filter(l => l.log_type === 'break_start');
-          const breakEnds = empLogs.filter(l => l.log_type === 'break_end');
+          const checkIn = empLogs.find((l: { punch_type: string }) => l.punch_type === 'check_in')?.punch_time;
+          const checkOut = empLogs.find((l: { punch_type: string }) => l.punch_type === 'check_out')?.punch_time;
           
-          let breakDuration = 0;
-          let currentDestination = '';
           let status = 'غائب';
           let statusColor = 'neutral';
 
           if (checkIn && !checkOut) { status = 'مداوم'; statusColor = 'success'; }
           if (checkIn && checkOut) { status = 'منصرف'; statusColor = 'primary'; }
-          if (breakStarts.length > breakEnds.length) {
-             status = 'في استراحة'; 
-             statusColor = 'warning';
-             currentDestination = breakStarts[breakStarts.length - 1].notes || 'غير محدد';
-          }
 
-          // حساب إجمالي وقت الاستراحات بالدقيقة
-          breakStarts.forEach((bs, index) => {
-             const be = breakEnds[index];
-             if (be) {
-               breakDuration += differenceInMinutes(new Date(be.timestamp), new Date(bs.timestamp));
-             } else {
-               // الاستراحة ما زالت مستمرة حتى اللحظة
-               breakDuration += differenceInMinutes(new Date(), new Date(bs.timestamp));
-             }
-          });
-
-          return { ...emp, checkIn, checkOut, breakDuration, currentDestination, status, statusColor };
+          return {
+            ...emp,
+            full_name: emp.full_name_ar || 'بدون اسم',
+            department: deptMap.get(emp.department_id || '') || 'بدون قسم',
+            checkIn, checkOut,
+            breakDuration: 0,
+            currentDestination: '',
+            status, statusColor,
+          };
         });
 
         setAttendanceData(analyzed);
@@ -135,19 +126,8 @@ export default function AttendancePage() {
                   <td className="py-4 px-4 font-mono text-slate-600">
                     {emp.checkOut ? <span className="flex items-center gap-1.5"><LogOut size={14} className="text-rose-500"/> {format(new Date(emp.checkOut), 'hh:mm a')}</span> : '---'}
                   </td>
+                  <td className="py-4 px-4 text-slate-400">—</td>
                   <td className="py-4 px-4">
-                    {emp.breakDuration > 0 ? (
-                      <span className="flex items-center gap-1.5 text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-lg w-max">
-                        <Coffee size={14}/> {emp.breakDuration} دقيقة
-                      </span>
-                    ) : <span className="text-slate-400">0 دقيقة</span>}
-                  </td>
-                  <td className="py-4 px-4">
-                    {emp.currentDestination ? (
-                      <span className="flex items-center gap-1.5 text-indigo-600 text-xs font-semibold">
-                        <MapPin size={13}/> {emp.currentDestination}
-                      </span>
-                    ) : <span className="text-slate-300">—</span>}
                   </td>
                 </tr>
               ))}

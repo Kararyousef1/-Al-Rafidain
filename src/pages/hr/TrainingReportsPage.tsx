@@ -278,11 +278,21 @@ export default function TrainingReportsPage() {
         if (coursesError) throw coursesError;
         const { data: progressData, error: progressError } = await supabase.from('course_progress').select('*');
         if (progressError) throw progressError;
-        const { data: profilesData, error: profilesError } = await supabase.from('profiles').select('*');
+        const { data: profilesData, error: profilesError } = await supabase.from('employees').select('id, full_name_ar, email, department_id, role');
         if (profilesError) throw profilesError;
+        // جلب أسماء الأقسام
+        const { data: depts } = await supabase.from('departments').select('id, name_ar');
+        const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
+        const normalizedProfiles: ProfileDB[] = (profilesData as any[] || []).map((e) => ({
+          id: e.id,
+          full_name: e.full_name_ar || '',
+          email: e.email || '',
+          department: deptMap.get(e.department_id || '') || '',
+          role: e.role || 'employee',
+        }));
         setCourses((coursesData as CourseDB[]) || []);
         setCourseProgress((progressData as CourseProgressDB[]) || []);
-        setProfiles((profilesData as ProfileDB[]) || []);
+        setProfiles(normalizedProfiles);
       } catch (err) {
         console.error('Failed to load training data:', getErrorMessage(err));
         setError(getErrorMessage(err, 'فشل في تحميل بيانات التدريب'));

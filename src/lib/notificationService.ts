@@ -10,8 +10,49 @@
  * ════════════════════════════════════════════════════════════════
  */
 import { supabase } from './supabase';
-import type { NotificationType } from '../constants/notificationTypes';
+import type { AppNotification, NotificationType } from '../constants/notificationTypes';
 import type { UserRole } from '../types';
+// ════════════════════════════════════════════════════════════════
+//  تحويل مركزي: snake_case (السيرفر) → camelCase (الواجهة)
+// ════════════════════════════════════════════════════════════════
+interface RawServerNotification {
+  id: string;
+  user_id?: string;
+  type: string;
+  priority: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  read_at?: string;
+  created_at: string;
+  action_url?: string;
+  group_key?: string;
+  metadata?: Record<string, unknown>;
+  expires_at?: string;
+}
+
+/**
+ * تحويل البيانات الخام من السيرفر (snake_case) إلى AppNotification (camelCase)
+ * هذه الدالة هي المصدر الوحيد للتحويل — يجب استخدامها في كل مكان
+ */
+export function transformServerNotification(raw: RawServerNotification): AppNotification {
+  return {
+    id: raw.id,
+    userId: raw.user_id || '',
+    type: raw.type as NotificationType,
+    priority: (raw.priority as AppNotification['priority']) || 'normal',
+    title: raw.title,
+    message: raw.message,
+    read: raw.is_read || false,
+    readAt: raw.read_at,
+    createdAt: raw.created_at,
+    actionUrl: raw.action_url,
+    groupKey: raw.group_key,
+    metadata: raw.metadata || {},
+    expiresAt: raw.expires_at,
+  };
+}
+
 // ════════════════════════════════════════════════════════════════
 //  أنواع البيانات
 // ════════════════════════════════════════════════════════════════
@@ -262,12 +303,11 @@ export async function notifySupervisors(
 let realtimeChannel: any = null;
 /**
  * الاشتراك في إشعارات Realtime للمستخدم
- * 
- * ملاحظة: localStorage يتم التحديث تلقائياً عبر هذا الاشتراك
+ * البيانات تُحوّل تلقائياً عبر transformServerNotification
  */
 export function subscribeToRealtimeNotifications(
   userId: string,
-  onNotification: (notification: any) => void
+  onNotification: (notification: AppNotification) => void
 ): () => void {
   if (!userId) return () => {};
   // إلغاء الاشتراك السابق
@@ -286,15 +326,15 @@ export function subscribeToRealtimeNotifications(
         filter: `user_id=eq.${userId}`,
       },
       (payload) => {
-        console.log('🔔 New notification via Realtime:', payload.new);
-        onNotification(payload.new);
+        if (payload.new) {
+          const notif = transformServerNotification(payload.new as unknown as RawServerNotification);
+          onNotification(notif);
+        }
       }
     )
     .subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
-        console.log('✅ Realtime notifications active for:', userId);
-      } else if (status === 'CLOSED') {
-        console.log('🔴 Realtime disconnected');
+        // نشط
       } else if (status === 'CHANNEL_ERROR') {
         console.error('❌ Realtime error - check if table is in publication');
       }
@@ -304,7 +344,6 @@ export function subscribeToRealtimeNotifications(
     if (realtimeChannel) {
       supabase.removeChannel(realtimeChannel);
       realtimeChannel = null;
-      console.log('🔴 Realtime unsubscribed');
     }
   };
 }
@@ -312,13 +351,13 @@ export function subscribeToRealtimeNotifications(
 //  دوال إدارة الإشعارات
 // ════════════════════════════════════════════════════════════════
 /**
- * جلب إشعارات المستخدم من Supabase
+ * جلب إشعارات المستخدم من Supabase (مع تحويل مركزي)
  */
 export async function fetchNotificationsFromServer(
   userId: string,
   limit = 50,
   unreadOnly = false
-): Promise<any[]> {
+): Promise<AppNotification[]> {
   try {
     let query = supabase
       .from('notifications')
@@ -331,9 +370,9 @@ export async function fetchNotificationsFromServer(
     }
     const { data, error } = await query;
     if (error) throw error;
-    
-    console.log(`✅ Loaded ${data?.length || 0} notifications from server`);
-    return data || [];
+
+    const notifications = (data || []).map((n) => transformServerNotification(n as unknown as RawServerNotification));
+    return notifications;
   } catch (err) {
     console.error('❌ Failed to fetch server notifications:', err);
     return [];
@@ -411,13 +450,33 @@ export async function deleteNotificationOnServer(
   }
 }
 /**
- * تنظيف الإشعارات القديمة (مجدولة)
+ * حذف جميع إشعارات المستخدم من السيرفر (عملية واحدة)
  */
-export async function cleanOldNotifications(daysOld = 90): Promise<number> {
+export async function deleteAllNotificationsOnServer(userId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId)
+      .select('id');
+    if (error) throw error;
+
+    return data?.length || 0;
+  } catch (err) {
+    console.error('❌ Failed to delete all notifications:', err);
+    return 0;
+  }
+}
+
+/**
+ * تنظيف الإشعارات القديمة (مجدولة)
+ * @param _daysOld - محجوز للتوافق مع واجهات سابقة (غير مستخدم حالياً، السيرفر يحذف المنتهي الصلاحية فقط)
+ */
+export async function cleanOldNotifications(_daysOld = 90): Promise<number> {
   try {
     const { data, error } = await supabase.rpc('cleanup_expired_notifications');
     if (error) throw error;
-    
+
     const count = data || 0;
     console.log(`🧹 Cleaned ${count} expired notifications`);
     return count;

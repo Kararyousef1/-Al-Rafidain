@@ -196,7 +196,7 @@ export default function StructureManager() {
 
   // ── عرض النموذج ────────────────────────────────────────────────
   const renderForm = () => {
-    const f = (editing ?? emptyForm()) as Record<string, unknown>;
+    const f = (editing ?? emptyForm()) as unknown as Record<string, unknown>;
 
     return (
       <Card className="border-2 border-indigo-200 mb-6">
@@ -329,7 +329,7 @@ export default function StructureManager() {
     return (
       <div className="space-y-2">
         {data.map((rawItem) => {
-          const item = rawItem as Record<string, unknown>;
+          const item = rawItem as unknown as Record<string, unknown>;
           const isActive = item.is_active !== false;
           return (
             <div

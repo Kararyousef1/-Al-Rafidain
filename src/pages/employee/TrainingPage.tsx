@@ -60,6 +60,8 @@ interface Course {
   instructor: string;
   objectives: string[];
   moduleList: CourseModule[];
+  /** صورة مصغّرة للدورة (رابط URL) */
+  thumbnail?: string;
 }
 
 // ── Translations ──

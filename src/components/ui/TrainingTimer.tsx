@@ -83,7 +83,7 @@ export default function TrainingTimer({
  */
 export function useTrainingTimer(
   itemId: string,
-  userId: string,
+  _userId: string,
   paused: boolean = false
 ): { seconds: number; reset: () => void } {
   const [seconds, setSeconds] = useState(0);

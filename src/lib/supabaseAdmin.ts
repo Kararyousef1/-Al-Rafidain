@@ -99,7 +99,7 @@ export const supabaseAdmin = isServiceKeyAvailable
 //  البديل الآمن: استدعاء Edge Functions
 // ══════════════════════════════════════════════════════════════
 
-import { supabase } from '../../sdk/supabase';
+import { supabase } from '../sdk/supabase';
 
 /**
  * استدعاء Edge Function إدارية بشكل آمن
@@ -112,9 +112,9 @@ import { supabase } from '../../sdk/supabase';
  *   role: 'employee',
  * });
  */
-export const callAdminFunction = async <T = unknown>(
+export const callAdminFunction = async <T = unknown, P extends Record<string, unknown> = Record<string, unknown>>(
   functionName: string,
-  payload: Record<string, unknown>,
+  payload: P,
 ): Promise<{ data: T | null; error: string | null }> => {
   try {
     const { data, error } = await supabase.functions.invoke(functionName, {
@@ -144,6 +144,7 @@ interface CreateUserPayload {
   role: string;
   department_id?: string;
   employee_id?: string;
+  [key: string]: unknown;
 }
 
 interface CreateUserResult {
@@ -166,6 +167,7 @@ interface UpdateUserRolePayload {
   target_user_id: string;
   new_role: string;
   updated_by: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -181,6 +183,7 @@ interface DeleteUserPayload {
   target_user_id: string;
   deleted_by: string;
   reason?: string;
+  [key: string]: unknown;
 }
 
 /**

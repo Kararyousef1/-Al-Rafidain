@@ -47,7 +47,15 @@ export interface LandingAgent {
   id: string;
   nameAr: string;
   nameEn: string;
+  /** الاسم المعروض (يُستخدم كاسم مستعار لـ nameAr/nameEn) */
+  name?: string;
   logoUrl: string;
+  /** تفاصيل/وصف إضافي للوكيل */
+  details?: string;
+  /** رابط الموقع الإلكتروني */
+  websiteUrl?: string;
+  /** رابط الموقع على الخريطة أو كود iframe */
+  mapUrl?: string;
   order?: number;
 }
 

@@ -12,7 +12,6 @@
 import type {
   AppNotification,
   NotificationType,
-  NotificationPriority,
   NotificationStats,
   NotificationFilter,
 } from '../constants/notificationTypes';
@@ -152,12 +151,12 @@ export function addNotification(
 ): AppNotification | null {
   if (!userId) return null;
   const existing = getUserNotifications(userId);
-  // منع التكرار
+  // منع التكرار: عند وجود إشعار غير مقروء بنفس groupKey → لا نُضيف (نُرجع null)
   if (!options?.forceDuplicate && notification.groupKey) {
     const duplicate = existing.find(
       (n) => n.groupKey === notification.groupKey && !n.read
     );
-    if (duplicate) return duplicate;
+    if (duplicate) return null;
   }
   const newNotification: AppNotification = {
     ...notification,

@@ -96,7 +96,7 @@ describe('lib/utils', () => {
     });
 
     it('should fallback to role if position is missing', () => {
-      const user = { ...mockUser, position: null };
+      const user = { ...mockUser, position: undefined };
       expect(getUserPosition(user)).toBe('employee');
     });
 

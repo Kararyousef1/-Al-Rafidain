@@ -26,7 +26,7 @@ import type { User, UserRole } from '../types';
  * بيانات خام قد تأتي من مصادر مختلفة (profiles, employees, local).
  * كل الحقول اختيارية لأن المصادر تختلف في توفّرها.
  */
-interface RawUserData {
+export interface RawUserData {
   // الهوية
   id?: string;
   user_id?: string;

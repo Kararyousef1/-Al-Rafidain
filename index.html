@@ -14,18 +14,18 @@
     />
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  PWA: Theme Color (الشريط يأخذ لون الهوية)                   -->
+    <!--  PWA: Theme Color                                            -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <meta name="theme-color" content="#4f46e5" />
     <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  PWA: Manifest (قابل للتثبيت كتطبيق)                         -->
+    <!--  PWA: Manifest                                               -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <link rel="manifest" href="/manifest.json" />
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  PWA: iOS / Safari Support (مهم جداً للآيفون)                 -->
+    <!--  PWA: iOS / Safari Support                                   -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -35,7 +35,6 @@
 
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!--  Favicon + Icons                                             -->
-    <!--  (SVG أولاً للشاشات الحديثة، PNG احتياطي)                      -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="shortcut icon" href="/icon.svg" />
@@ -45,7 +44,7 @@
     <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  Open Graph / Social Media (مشاركة الروابط)                  -->
+    <!--  Open Graph / Social Media                                   -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="وادي الرافدين - نظام إدارة الموارد البشرية" />
@@ -58,16 +57,22 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  Fonts (تم إصلاح روابط markdown المكسورة)                    -->
+    <!--  Fonts — preconnect + preload الخط الأساسي                  -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- preload للوزن الأكثر استخداماً (400) لتفادي FOUC -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap"
+    />
     <link
       href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap"
       rel="stylesheet"
     />
 
-    <!-- ═══ منع وميض FOUC (الخط الافتراضي قبل تحميل Cairo/Tajawal) ═══ -->
+    <!-- ═══ منع FOUC + Loading Spinner أولي ═══ -->
     <style>
       html {
         font-family: 'Tajawal', 'Cairo', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -76,7 +81,7 @@
         margin: 0;
         background-color: #f8fafc;
       }
-      /* منع وميض التحميل الأولي */
+      /* Spinner قبل تحميل React */
       #root:empty::before {
         content: '';
         position: fixed;
@@ -90,20 +95,31 @@
         border-radius: 50%;
         animation: app-spin 0.8s linear infinite;
       }
+      /* Progress bar تحت الـ spinner */
+      #root:empty::after {
+        content: '';
+        position: fixed;
+        top: calc(50% + 40px);
+        left: 50%;
+        width: 120px;
+        height: 3px;
+        margin-left: -60px;
+        background: #e2e8f0;
+        border-radius: 2px;
+        overflow: hidden;
+      }
       @keyframes app-spin {
-        to {
-          transform: rotate(360deg);
-        }
+        to { transform: rotate(360deg); }
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
-
-    <!-- ═══ نقطة دخول التطبيق ═══ -->
     <script type="module" src="/src/main.tsx"></script>
-
-    <!-- ═══ تسجيل Service Worker (للإنتاج فقط عبر registerSW.ts) ═══ -->
-    <!-- تم نقله إلى src/main.tsx عبر استدعاء registerServiceWorker() -->
-  <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0de7faf6dcde324',t:'MTc4MTgyOTc5OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+    <!--
+      ملاحظة: تم إزالة سكريبت Cloudflare Challenge Platform المجهول
+      الذي كان موجوداً في السابق. إذا كنت بحاجة لحماية CF، فعّلها
+      من لوحة تحكم Cloudflare مباشرةً وليس عبر كود مضمّن يدوياً.
+    -->
+  </body>
 </html>

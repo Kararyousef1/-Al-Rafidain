@@ -1,24 +1,35 @@
 /**
  * ════════════════════════════════════════════════════════════════
  *  صفحة تسجيل الدخول - نظام الرافدين HR
+ *  (إعادة تصميم — بطاقة زجاجية Glassmorphism)
  *
- *  🔒 إصلاحات الأمان (v2):
- *  1. حُذف localStorage.setItem('user') بعد تسجيل الدخول
- *     → المصادقة تعتمد على Supabase Session فقط (store.initialize يتحقق منها)
- *  2. توحيد نطاق البريد: @alrafidain.com (متوافق مع Supabase)
- *  3. إضافة حماية ضد Brute Force (rate limit display)
- *  4. إضافة مؤقت تلقائي لمسح رسالة الخطأ
- *  5. تحسين UX: زر إظهار/إخفاء كلمة المرور مع aria-label
+ *  🔒 الأمان (محفوظ كما هو):
+ *  1. لا localStorage.setItem('user') بعد تسجيل الدخول
+ *     → المصادقة تعتمد على Supabase Session فقط
+ *  2. نطاق البريد الموحَّد: @alrafidain.com
+ *  3. حماية ضد Brute Force (rate limit) في sessionStorage
+ *  4. مؤقت تلقائي لمسح رسالة الخطأ
+ *  5. زر إظهار/إخفاء كلمة المرور مع aria-label
+ *
+ *  ✨ التحسينات في هذه النسخة:
+ *  • تصميم زجاجي عصري (backdrop-blur + aurora متحركة)
+ *  • زر "العودة للرئيسية" لإخراج المستخدم من الفخ
+ *  • إزالة window.location.href = '/' — الاعتماد على store فقط
+ *  • شريط ثقة (مشفّر / سريع / موثوق) لإحساس احترافي
  * ════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  Eye, EyeOff, AlertCircle, CheckCircle2, Loader2,
+  ShieldCheck, ArrowRight, Lock, Zap, ArrowRight as ArrowBack,
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store';
 
 interface LoginPageProps {
   onNavigate?: (page: string) => void;
+  onBack?: () => void;
 }
 
 // ── ثوابت ──────────────────────────────────────────────────────
@@ -31,8 +42,8 @@ const ATTEMPT_KEY = 'login_attempts';
 const LOCKOUT_KEY = 'login_lockout';
 
 // ════════════════════════════════════════════════════════════════
-export default function LoginPage({ onNavigate }: LoginPageProps) {
-  const { refreshUser } = useAuthStore();
+export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
+  const { login: storeLogin } = useAuthStore();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -126,8 +137,8 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
   // ════════════════════════════════════════════════════════════
   //  تسجيل الدخول
   //  🔒 لا localStorage.setItem('user') هنا
-  //  → Supabase Session يُحفَظ في cookie/localStorage تلقائياً
-  //  → store.initialize() يقرأ الجلسة من Supabase مباشرة
+  //  → storeLogin يتولى: Supabase Auth + جلب البروفايل + تعيين isAuthenticated
+  //  → بما في ذلك الإشعارات + الاشتراك في Realtime
   // ════════════════════════════════════════════════════════════
 
   const handleLogin = useCallback(
@@ -153,44 +164,21 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
           ? username.trim().toLowerCase()
           : `${username.trim().toLowerCase()}${EMAIL_DOMAIN}`;
 
-        // ══ تسجيل الدخول عبر Supabase Auth ══
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email: finalEmail,
-          password,
-        });
+        // ══ تسجيل الدخول عبر دالة store.login() ══
+        // هذه الدالة تتولى كل شيء:
+        //   1. Supabase Auth (signInWithPassword)
+        //   2. جلب البروفايل من profiles/employees
+        //   3. تعيين isAuthenticated = true ← هذا ما كان مفقوداً!
+        //   4. إرسال إشعارات الترحيب وتسجيل الدخول
+        //   5. اشتراك Realtime لتحديثات البروفايل
+        const success = await storeLogin(finalEmail, password);
 
-        if (signInError) throw signInError;
-
-        if (!data.user) {
-          throw new Error('لم يتم إرجاع بيانات المستخدم');
+        if (!success) {
+          throw new Error('فشل تسجيل الدخول — تحقق من بياناتك');
         }
-
-        // ══ تحديث آخر دخول في الخلفية (لا ننتظر النتيجة) ══
-        supabase
-          .from('profiles')
-          .update({ last_login: new Date().toISOString() })
-          .eq('id', data.user.id)
-          .then(({ error: updateError }) => {
-            if (updateError) {
-              console.warn('last_login update failed (non-critical):', updateError.message);
-            }
-          });
-
-        // ══ تحديث store بعد تسجيل الدخول ══
-        // Supabase Session محفوظة تلقائياً — store يقرأها
-        await refreshUser();
 
         clearAttempts();
         setSuccess('تم تسجيل الدخول بنجاح! جاري التحويل...');
-
-        // إعادة التوجيه بعد 1.2 ثانية
-        setTimeout(() => {
-          if (onNavigate) {
-            onNavigate('dashboard');
-          } else {
-            window.location.href = '/';
-          }
-        }, 1200);
 
       } catch (err: any) {
         recordFailedAttempt();
@@ -227,11 +215,11 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
         setLoading(false);
       }
     },
-    [username, password, remainingLockout, refreshUser, onNavigate],
+    [username, password, remainingLockout, storeLogin],
   );
 
   // ════════════════════════════════════════════════════════════
-  //  واجهة المستخدم
+  //  واجهة المستخدم — بطاقة زجاجية
   // ════════════════════════════════════════════════════════════
 
   const isLocked = remainingLockout > 0;
@@ -240,33 +228,130 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-800 p-4"
+      className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden"
       dir="rtl"
     >
-      <div className="w-full max-w-md">
-        {/* البطاقة الرئيسية */}
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+      {/* ══ أنماط محلية (aurora متحركة + شبكة + بطاقة زجاجية) ══ */}
+      <style>{`
+        @keyframes aurora1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(40px, -30px) scale(1.1); }
+          66% { transform: translate(-30px, 20px) scale(0.95); }
+        }
+        @keyframes aurora2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-50px, 30px) scale(1.15); }
+        }
+        @keyframes aurora3 {
+          0%, 100% { transform: translate(0, 0) scale(0.9); }
+          50% { transform: translate(30px, 40px) scale(1.05); }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes shimmer {
+          from { background-position: -200% 0; }
+          to { background-position: 200% 0; }
+        }
+        .aurora-blob { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.6; pointer-events: none; }
+        .glass-card {
+          animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        .login-input {
+          transition: all 0.25s ease;
+        }
+        .login-input:focus {
+          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+        }
+        .shimmer-btn {
+          background-image: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%);
+          background-size: 200% 100%;
+          animation: shimmer 2.5s infinite;
+        }
+      `}</style>
 
-          {/* رأس البطاقة */}
-          <div className="bg-gradient-to-l from-indigo-600 to-indigo-700 px-8 py-6 text-white text-center">
-            <div className="inline-flex items-center justify-center w-14 h-14 bg-white/20 rounded-2xl mb-3">
-              <ShieldCheck size={28} className="text-white" />
+      {/* ══ الخلفية المتدرّجة الأساسية ══ */}
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900" />
+
+      {/* ══ كرات Aurora الضوئية المتحركة ══ */}
+      <div
+        className="aurora-blob"
+        style={{
+          width: 500, height: 500,
+          top: '-10%', right: '-5%',
+          background: 'radial-gradient(circle, #6366f1, transparent 70%)',
+          animation: 'aurora1 18s ease-in-out infinite',
+        }}
+      />
+      <div
+        className="aurora-blob"
+        style={{
+          width: 450, height: 450,
+          bottom: '-10%', left: '-5%',
+          background: 'radial-gradient(circle, #8b5cf6, transparent 70%)',
+          animation: 'aurora2 22s ease-in-out infinite',
+        }}
+      />
+      <div
+        className="aurora-blob"
+        style={{
+          width: 350, height: 350,
+          top: '40%', left: '40%',
+          background: 'radial-gradient(circle, #4f46e5, transparent 70%)',
+          opacity: 0.35,
+          animation: 'aurora3 25s ease-in-out infinite',
+        }}
+      />
+
+      {/* ══ شبكة خفيفة ══ */}
+      <div
+        className="absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage:
+            'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)',
+          backgroundSize: '56px 56px',
+        }}
+      />
+
+      {/* ══ البطاقة الزجاجية ══ */}
+      <div className="glass-card relative w-full max-w-md z-10">
+        {/* زر العودة للرئيسية */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="group absolute -top-14 right-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 backdrop-blur-md border border-white/10 text-white/70 hover:text-white hover:bg-white/10 text-sm font-semibold transition-all"
+          >
+            <ArrowBack size={16} className="rotate-180 group-hover:-translate-x-0.5 transition-transform" />
+            العودة للرئيسية
+          </button>
+        )}
+
+        {/* ══ البطاقة نفسها ══ */}
+        <div className="relative bg-white/10 backdrop-blur-2xl rounded-3xl border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] overflow-hidden">
+          {/* لمعة علوية */}
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+
+          {/* ══ الرأس (الشعار + الهوية) ══ */}
+          <div className="px-8 pt-10 pb-7 text-center">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-indigo-700 shadow-[0_10px_30px_-5px_rgba(99,102,241,0.6)] mb-5 ring-1 ring-white/20">
+              <ShieldCheck size={40} className="text-white" strokeWidth={1.8} />
             </div>
-            <h1 className="text-xl font-bold">شركة وادي الرافدين</h1>
-            <p className="text-indigo-200 text-sm mt-0.5">لإنتاج المواد الصيدلانية</p>
+            <h1 className="text-2xl font-black text-white mb-1">شركة وادي الرافدين</h1>
+            <p className="text-indigo-200/80 text-sm font-medium">لإنتاج المواد الصيدلانية</p>
           </div>
 
-          {/* جسم النموذج */}
-          <div className="px-8 py-8">
-            <p className="text-slate-500 text-center text-sm mb-6">
+          {/* ══ جسم النموذج ══ */}
+          <div className="px-8 pb-9">
+            <p className="text-white/60 text-center text-sm mb-6">
               سجّل دخولك إلى نظام إدارة الموارد البشرية
             </p>
 
             {/* تنبيه القفل */}
             {isLocked && (
-              <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-start gap-3">
-                <AlertCircle size={18} className="text-orange-500 shrink-0 mt-0.5" />
-                <div className="text-sm text-orange-700">
+              <div className="mb-4 bg-orange-500/15 border border-orange-400/30 rounded-2xl px-4 py-3 flex items-start gap-3 backdrop-blur-sm">
+                <AlertCircle size={18} className="text-orange-300 shrink-0 mt-0.5" />
+                <div className="text-sm text-orange-100">
                   <p className="font-semibold">الحساب مؤمَّن مؤقتاً</p>
                   <p className="mt-0.5">
                     انتظر{' '}
@@ -280,12 +365,12 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
               </div>
             )}
 
-            <form onSubmit={handleLogin} className="space-y-5" noValidate>
+            <form onSubmit={handleLogin} className="space-y-4" noValidate>
               {/* حقل اسم المستخدم */}
               <div>
                 <label
                   htmlFor="username"
-                  className="block text-sm font-semibold text-slate-700 mb-1.5"
+                  className="block text-sm font-semibold text-white/80 mb-1.5"
                 >
                   اسم المستخدم
                 </label>
@@ -297,7 +382,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
                     setUsername(e.target.value);
                     setError('');
                   }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all placeholder:text-slate-400 disabled:opacity-60"
+                  className="login-input w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-400 focus:bg-white/10 placeholder:text-white/35 disabled:opacity-50"
                   placeholder="مثال: ahmed.ali"
                   autoComplete="username"
                   autoCapitalize="none"
@@ -305,8 +390,8 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
                   disabled={loading || isLocked}
                   required
                 />
-                <p className="mt-1 text-xs text-slate-400">
-                  يمكنك إدخال اسم المستخدم أو البريد الإلكتروني الكامل
+                <p className="mt-1.5 text-xs text-white/40">
+                  اسم المستخدم أو البريد الإلكتروني الكامل
                 </p>
               </div>
 
@@ -314,7 +399,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
               <div>
                 <label
                   htmlFor="password"
-                  className="block text-sm font-semibold text-slate-700 mb-1.5"
+                  className="block text-sm font-semibold text-white/80 mb-1.5"
                 >
                   كلمة المرور
                 </label>
@@ -327,7 +412,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
                       setPassword(e.target.value);
                       setError('');
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all placeholder:text-slate-400 disabled:opacity-60 pl-12"
+                    className="login-input w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-400 focus:bg-white/10 placeholder:text-white/35 disabled:opacity-50 pl-12"
                     placeholder="••••••••"
                     autoComplete="current-password"
                     disabled={loading || isLocked}
@@ -337,7 +422,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
                     type="button"
                     onClick={() => setShowPass((v) => !v)}
                     aria-label={showPass ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors p-1 rounded"
                     tabIndex={-1}
                   >
                     {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -347,7 +432,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
 
               {/* رسالة الخطأ */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 flex items-start gap-2.5 text-sm">
+                <div className="bg-red-500/15 border border-red-400/30 text-red-100 rounded-xl px-4 py-3 flex items-start gap-2.5 text-sm backdrop-blur-sm animate-[slideUp_0.3s_ease]">
                   <AlertCircle size={16} className="shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -355,7 +440,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
 
               {/* رسالة النجاح */}
               {success && (
-                <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 flex items-center gap-2.5 text-sm font-medium">
+                <div className="bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 rounded-xl px-4 py-3 flex items-center gap-2.5 text-sm font-medium backdrop-blur-sm animate-[slideUp_0.3s_ease]">
                   <CheckCircle2 size={16} className="shrink-0" />
                   <span>{success}</span>
                 </div>
@@ -365,7 +450,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
               <button
                 type="submit"
                 disabled={loading || isLocked}
-                className="w-full bg-indigo-600 text-white rounded-xl py-3 font-bold hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="relative w-full bg-gradient-to-l from-indigo-600 to-indigo-500 text-white rounded-xl py-3.5 font-bold hover:from-indigo-500 hover:to-indigo-400 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_10px_30px_-5px_rgba(99,102,241,0.5)] overflow-hidden"
               >
                 {loading ? (
                   <>
@@ -378,24 +463,42 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
                     {String(lockoutSeconds).padStart(2, '0')} ث
                   </span>
                 ) : (
-                  'تسجيل الدخول'
+                  <>
+                    <span>تسجيل الدخول</span>
+                    <ArrowRight size={18} />
+                    {!loading && (
+                      <span className="shimmer-btn absolute inset-0 pointer-events-none" />
+                    )}
+                  </>
                 )}
               </button>
             </form>
 
             {/* تذييل */}
-            <p className="text-center text-xs text-slate-400 mt-6">
+            <p className="text-center text-xs text-white/40 mt-6">
               للمساعدة التقنية تواصل مع{' '}
-              <span className="text-indigo-600 font-medium">مدير النظام</span>
+              <span className="text-indigo-300 font-medium">مدير النظام</span>
             </p>
           </div>
         </div>
 
-        {/* معلومات الأمان */}
-        <p className="text-center text-xs text-slate-500 mt-4 flex items-center justify-center gap-1.5">
-          <ShieldCheck size={12} className="text-indigo-400" />
-          اتصال آمن مشفَّر — جميع البيانات محمية
-        </p>
+        {/* ══ شريط الثقة ══ */}
+        <div className="flex items-center justify-center gap-5 mt-6 text-white/50 text-xs font-semibold">
+          <span className="flex items-center gap-1.5">
+            <Lock size={13} className="text-indigo-300" />
+            مشفّر
+          </span>
+          <span className="w-1 h-1 rounded-full bg-white/20" />
+          <span className="flex items-center gap-1.5">
+            <Zap size={13} className="text-indigo-300" />
+            سريع
+          </span>
+          <span className="w-1 h-1 rounded-full bg-white/20" />
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck size={13} className="text-indigo-300" />
+            موثوق
+          </span>
+        </div>
       </div>
     </div>
   );

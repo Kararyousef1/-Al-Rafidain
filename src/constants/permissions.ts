@@ -315,22 +315,44 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
 };
 
 /**
+ * الحصول على الصلاحيات الافتراضية لدور معيّن (نسخة مرجعية)
+ * @param role دور المستخدم
+ * @returns مصفوفة الصلاحيات الافتراضية للدور
+ */
+export function getDefaultPermissions(role: UserRole): PermissionKey[] {
+  return DEFAULT_ROLE_PERMISSIONS[role] || DEFAULT_ROLE_PERMISSIONS.employee;
+}
+
+/**
  * الحصول على الصلاحيات الفعالة لمستخدم
  * @param role دور المستخدم
  * @param dbPermissions صلاحيات مخصصة من قاعدة البيانات (إن وجدت)
- * @returns مصفوفة الصلاحيات الفعالة
+ * @returns الصلاحيات الفعّالة = الصلاحيات الافتراضية + المخصصة (بدون تكرار)
  */
 export function getEffectivePermissions(
   role: UserRole,
   dbPermissions?: string[] | null
 ): string[] {
-  // إذا كانت هناك صلاحيات مخصصة من قاعدة البيانات، استخدمها
-  if (dbPermissions && Array.isArray(dbPermissions) && dbPermissions.length > 0) {
-    return dbPermissions.filter(perm => typeof perm === 'string');
+  const defaults = getDefaultPermissions(role);
+
+  // إذا لم توجد صلاحيات مخصصة، استخدم الافتراضية
+  if (!dbPermissions || !Array.isArray(dbPermissions) || dbPermissions.length === 0) {
+    return defaults;
   }
-  
-  // وإلا استخدم الصلاحيات الافتراضية
-  return DEFAULT_ROLE_PERMISSIONS[role] || DEFAULT_ROLE_PERMISSIONS.employee;
+
+  const custom = dbPermissions.filter((perm) => typeof perm === 'string');
+
+  // دمج الافتراضية مع المخصصة مع إزالة التكرار (الافتراضية أولاً)
+  const merged = [...defaults];
+  const seen = new Set(defaults);
+  for (const perm of custom) {
+    if (!seen.has(perm)) {
+      merged.push(perm);
+      seen.add(perm);
+    }
+  }
+
+  return merged;
 }
 
 /**

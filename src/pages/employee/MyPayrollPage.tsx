@@ -1,0 +1,192 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  MyPayrollPage - قسيمة الراتب للموظف
+ *  عرض سجل الرواتب وقسائم الراتب للموظف الحالي
+ * ════════════════════════════════════════════════════════════════
+ */
+
+import { useState, useEffect } from 'react';
+import { DollarSign, FileText, Loader2, Eye, X, TrendingUp, TrendingDown } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store';
+import { getErrorMessage } from '../../lib/errors';
+import { format } from 'date-fns';
+import { ar } from 'date-fns/locale';
+import type { PayrollRecord } from '../../types/payroll';
+import { PAYROLL_STATUS_LABELS, PAYROLL_STATUS_COLORS, formatCurrency } from '../../utils/payrollUtils';
+
+export default function MyPayrollPage() {
+  const { user } = useAuthStore();
+  const [loading, setLoading] = useState(true);
+  const [employeeId, setEmployeeId] = useState<string>('');
+  const [records, setRecords] = useState<PayrollRecord[]>([]);
+  const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (!user?.id) return;
+      const { data } = await supabase.from('employees').select('id').eq('user_id', user.id).single();
+      if (data) setEmployeeId(data.id);
+    })();
+  }, [user]);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('payroll_records')
+          .select(`*, payroll_periods(name, start_date, end_date, payment_date)`)
+          .eq('employee_id', employeeId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        setRecords((data || []) as unknown as PayrollRecord[]);
+      } catch (err) {
+        console.error(getErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [employeeId]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <Loader2 className="animate-spin text-emerald-500 mb-3" size={40} />
+        <p className="text-slate-500">جاري التحميل...</p>
+      </div>
+    );
+  }
+
+  const totalEarned = records.reduce((s, r) => s + r.net_salary, 0);
+  const totalDeductions = records.reduce((s, r) => s + r.total_deductions, 0);
+
+  return (
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      {/* الهيدر */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+          <DollarSign className="text-white" size={24} />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">رواتبي</h1>
+          <p className="text-sm text-slate-500">سجل الرواتب والقسائم</p>
+        </div>
+      </div>
+
+      {/* ملخص */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white">
+          <TrendingUp size={20} className="mb-2 opacity-80" />
+          <p className="text-2xl font-bold">{formatCurrency(totalEarned)}</p>
+          <p className="text-sm opacity-90">إجمالي الصافي</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <FileText size={20} className="mb-2 text-blue-500" />
+          <p className="text-2xl font-bold text-slate-900">{records.length}</p>
+          <p className="text-sm text-slate-500">قسائم الرواتب</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <TrendingDown size={20} className="mb-2 text-red-500" />
+          <p className="text-2xl font-bold text-slate-900">{formatCurrency(totalDeductions)}</p>
+          <p className="text-sm text-slate-500">إجمالي الاستقطاعات</p>
+        </div>
+      </div>
+
+      {/* القائمة */}
+      {records.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+            <FileText size={28} className="text-slate-400" />
+          </div>
+          <p className="font-semibold text-slate-700">لا توجد قسائم رواتب</p>
+          <p className="text-sm text-slate-400 mt-1">ستظهر هنا قسائم راتبك عند صرفها</p>
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {records.map((r) => {
+            const period = (r as any).payroll_periods;
+            const statusColor = PAYROLL_STATUS_COLORS[r.status] || PAYROLL_STATUS_COLORS.draft;
+            return (
+              <div key={r.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center">
+                    <DollarSign size={20} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">{period?.name || 'فترة رواتب'}</p>
+                    <p className="text-xs text-slate-500">
+                      {period?.payment_date ? format(new Date(period.payment_date), 'd MMMM yyyy', { locale: ar }) : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-left">
+                    <p className="font-bold text-slate-900">{formatCurrency(r.net_salary)}</p>
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold mt-0.5"
+                      style={{ background: statusColor.bg, color: statusColor.text }}>
+                      {PAYROLL_STATUS_LABELS[r.status]}
+                    </span>
+                  </div>
+                  <button onClick={() => setSelectedRecord(r)}
+                    className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
+                    <Eye size={18} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal: تفاصيل القسيمة */}
+      {selectedRecord && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedRecord(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">قسيمة الراتب</h3>
+                <p className="text-sm text-slate-500">
+                  {(selectedRecord as any).payroll_periods?.name}
+                </p>
+              </div>
+              <button onClick={() => setSelectedRecord(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <PaySlipRow label="الراتب الأساسي" value={formatCurrency(selectedRecord.basic_salary)} color="text-slate-900" />
+              <PaySlipRow label="إجمالي البدلات" value={`+ ${formatCurrency(selectedRecord.total_allowances)}`} color="text-emerald-600" />
+              <PaySlipRow label="الوقت الإضافي" value={`+ ${formatCurrency(selectedRecord.overtime_pay)}`} color="text-emerald-600" />
+              <PaySlipRow label="الجوائز والمكافآت" value={`+ ${formatCurrency(selectedRecord.bonus_amount)}`} color="text-emerald-600" />
+              <PaySlipRow label="إجمالي الاستقطاعات" value={`- ${formatCurrency(selectedRecord.total_deductions)}`} color="text-red-600" />
+              <div className="border-t border-slate-200 pt-3 mt-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">صافي الراتب</span>
+                  <span className="text-xl font-bold text-emerald-600">{formatCurrency(selectedRecord.net_salary)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-xs">
+              <div><p className="text-slate-400">أيام العمل</p><p className="font-semibold text-slate-700">{selectedRecord.working_days}</p></div>
+              <div><p className="text-slate-400">أيام الحضور</p><p className="font-semibold text-slate-700">{selectedRecord.present_days}</p></div>
+              <div><p className="text-slate-400">أيام الغياب</p><p className="font-semibold text-slate-700">{selectedRecord.absent_days}</p></div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PaySlipRow({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm text-slate-600">{label}</span>
+      <span className={`font-semibold ${color}`}>{value}</span>
+    </div>
+  );
+}

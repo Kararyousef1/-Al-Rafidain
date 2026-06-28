@@ -183,9 +183,10 @@ export default function ReportsPage() {
         await new Promise(r => setTimeout(r, 1500));
         addToast(`عذراً، هذا التقرير قيد التطوير وسيتاح قريباً.`, 'info');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating report:', error);
-      addToast(`فشل في توليد التقرير: ${error.message}`, 'error');
+      const msg = error instanceof Error ? error.message : 'خطأ غير معروف';
+      addToast(`فشل في توليد التقرير: ${msg}`, 'error');
     } finally {
     setGenerating(null);
     }

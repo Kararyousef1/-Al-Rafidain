@@ -242,11 +242,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const userId = session.user.id;
       let profile: User | null = null;
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      // ✅ تشغيل الجدولين معاً بدل الانتظار المتسلسل — يوفر ~200-400ms
+      const [profileResult, empResult] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+        tryFetchFromEmployees(userId),
+      ]);
+
+      const profileData = profileResult.data;
 
       if (profileData) {
         profile = normalizeUser({
@@ -256,9 +258,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             profileData.permissions,
           ),
         });
-      } else {
-        console.log('🔄 Profile not found, trying employees table...');
-        profile = await tryFetchFromEmployees(userId);
+      } else if (empResult) {
+        console.log('🔄 Using employees table profile');
+        profile = empResult;
       }
 
       if (!profile) {

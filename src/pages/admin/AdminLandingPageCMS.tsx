@@ -49,8 +49,8 @@ interface LandingProductExtended extends LandingProduct {
   detailsEn?: string;
 }
 
-/** وكيل/موزّع */
-interface LandingAgent {
+/** وكيل/موزّع — نموذج CMS المبسّط (حقل اسم موحّد) */
+interface CMSAgent {
   id: string;
   name: string;
   logoUrl?: string;
@@ -60,8 +60,8 @@ interface LandingAgent {
   order?: number;
 }
 
-/** إحصائية عرض */
-interface LandingStat {
+/** إحصائية عرض — نموذج CMS المبسّط */
+interface CMSStat {
   id: string;
   value: number;
   suffix?: string;
@@ -80,10 +80,20 @@ interface SocialLinks {
 }
 
 /**
- * تكوين الصفحة الكامل — يوسّع LandingConfig بكل الحقول التي
- * يستخدمها هذا الـ CMS. هذا يلغي الحاجة لـ (config as any).
+ * تكوين الصفحة الكامل — كل الحقول اختيارية لإدارة CMS.
+ * لا يوسّع LandingConfig مباشرة لتجنب تضارب required vs optional.
+ * يُحوَّل إلى LandingConfig عند الحفظ في store.
  */
-interface CMSConfig extends LandingConfig {
+interface CMSConfig {
+  themeColor?: string;
+  logoSymbol?: string;
+  logoUrl?: string;
+  logoTextAr?: string;
+  logoTextEn?: string;
+  heroTitleAr?: string;
+  heroTitleEn?: string;
+  heroDescAr?: string;
+  heroDescEn?: string;
   aboutP1Ar?: string;
   aboutP1En?: string;
   aboutP2Ar?: string;
@@ -93,6 +103,12 @@ interface CMSConfig extends LandingConfig {
   addressAr?: string;
   addressEn?: string;
   mapUrl?: string;
+  showCareSection?: boolean;
+  showAgentsSection?: boolean;
+  showLocationSection?: boolean;
+  showMarketingSection?: boolean;
+  showVideoSection?: boolean;
+  showStatsSection?: boolean;
   marketingTitleAr?: string;
   marketingTitleEn?: string;
   marketingIntroAr?: string;
@@ -103,19 +119,15 @@ interface CMSConfig extends LandingConfig {
   marketingVisionTextEn?: string;
   marketingCommitmentAr?: string;
   marketingCommitmentEn?: string;
+  youtubeUrl?: string;
   phone?: string;
   email?: string;
-  socialLinks?: SocialLinks;
-  agents?: LandingAgent[];
-  stats?: LandingStat[];
-  showCareSection?: boolean;
-  showAgentsSection?: boolean;
-  showMarketingSection?: boolean;
-  showStatsSection?: boolean;
-  showLocationSection?: boolean;
   products?: LandingProductExtended[];
   videos?: LandingVideo[];
   customNavLinks?: LandingNavLink[];
+  stats?: CMSStat[];
+  agents?: CMSAgent[];
+  socialLinks?: SocialLinks;
 }
 
 /** مفتاح حقل قابل للتحديث ديناميكياً */
@@ -494,9 +506,9 @@ export default function AdminLandingPageCMS() {
       try {
         const { data, error } = await supabase.from('system_settings').select('landing_config').eq('id', 'singleton').single();
         if (!error && data?.landing_config) {
-          const merged: CMSConfig = { videos: [], products: [], customNavLinks: [], ...landingConfig, ...(data.landing_config as Partial<CMSConfig>) };
+          const merged: CMSConfig = { ...DEFAULT_CONFIG, ...landingConfig, ...(data.landing_config as Partial<CMSConfig>) };
           setConfig(merged);
-          updateLandingConfig(merged);
+          updateLandingConfig(merged as Partial<LandingConfig>);
         }
       } catch (err) {
         console.error('Failed to load config:', getErrorMessage(err));
@@ -524,7 +536,7 @@ export default function AdminLandingPageCMS() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      updateLandingConfig(config);
+      updateLandingConfig(config as Partial<LandingConfig>);
       const { error } = await supabase.from('system_settings').upsert({ id: 'singleton', landing_config: config, updated_at: new Date().toISOString() }, { onConflict: 'id' });
       if (error) throw error;
       setSavedAt(new Date().toLocaleTimeString('ar-SA'));
@@ -540,7 +552,7 @@ export default function AdminLandingPageCMS() {
 
   const handleReset = () => {
     if (!confirm('تراجع عن جميع التغييرات غير المحفوظة؟')) return;
-    setConfig({ ...DEFAULT_CONFIG, ...landingConfig });
+    setConfig({ ...DEFAULT_CONFIG, ...landingConfig } as CMSConfig);
     setHasChanges(false);
     showToast('تم التراجع', 'info');
   };
@@ -614,11 +626,11 @@ export default function AdminLandingPageCMS() {
 
   // ── Agents CRUD ──
   const addAgent = () => {
-    const newAgent: LandingAgent = { id: generateId(), name: 'وكيل جديد', logoUrl: '', details: '', websiteUrl: '', mapUrl: '', order: (config.agents || []).length };
+    const newAgent: CMSAgent = { id: generateId(), name: 'وكيل جديد', logoUrl: '', details: '', websiteUrl: '', mapUrl: '', order: (config.agents || []).length };
     setConfig(prev => ({ ...prev, agents: [...(prev.agents || []), newAgent] }));
     setHasChanges(true);
   };
-  const updateAgent = (id: string, field: keyof LandingAgent, value: string) => {
+  const updateAgent = (id: string, field: keyof CMSAgent, value: string) => {
     setConfig(prev => ({ ...prev, agents: (prev.agents || []).map(a => a.id === id ? { ...a, [field]: value } : a) }));
     setHasChanges(true);
   };
@@ -628,7 +640,7 @@ export default function AdminLandingPageCMS() {
   };
 
   // ── Stats CRUD ──
-  const updateStat = (id: string, field: keyof LandingStat, value: string | number) => {
+  const updateStat = (id: string, field: keyof CMSStat, value: string | number) => {
     setConfig(prev => ({ ...prev, stats: (prev.stats || []).map(s => s.id === id ? { ...s, [field]: value } : s) }));
     setHasChanges(true);
   };

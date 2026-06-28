@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutDashboard, Users, FileText, Heart, Bot, GraduationCap, ClipboardList, MessageSquare, BarChart3, Briefcase, ShieldCheck, UserCheck, Bell, ChevronLeft, Megaphone, ArrowRightLeft, Clock, BookOpen, Terminal, Database, AlertOctagon, Settings, Globe, Award, Star, Activity } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Heart, Bot, ClipboardList, MessageSquare, BarChart3, ShieldCheck, UserCheck, Bell, ChevronLeft, Megaphone, ArrowRightLeft, Clock, BookOpen, Terminal, Database, AlertOctagon, Settings, Globe, Award, Star, Activity, Lock } from 'lucide-react';
 
 const changelog = [
   {

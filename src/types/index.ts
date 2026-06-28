@@ -80,6 +80,7 @@ export interface User {
 
   // الإدارة والمالية
   manager_id?: string;           // ID المدير المباشر
+  manager?: string;              // اسم المدير المباشر (للعرض)
   supervisor_id?: string;
   department_manager_id?: string;
   shift?: string;
@@ -175,6 +176,7 @@ export interface Notification {
   type: 'info' | 'success' | 'warning' | 'error';
   read: boolean;
   createdAt: string;
+  readAt?: string;
   link?: string;
   recipient_id?: string;
 }

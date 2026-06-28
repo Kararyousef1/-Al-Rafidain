@@ -28,7 +28,7 @@ export async function linkLeaveApproval(
   employeeId: string,
   dateFrom: string,
   dateTo: string,
-  leaveType: string
+  _leaveType: string
 ): Promise<{ success: boolean; daysUpdated: number; error?: string }> {
   try {
     const dates = getDatesInRange(dateFrom, dateTo);
@@ -94,8 +94,8 @@ export async function linkLeaveApproval(
 export async function linkPermissionApproval(
   employeeId: string,
   date: string,
-  expectedOutTime: string,
-  expectedReturnTime?: string
+  _expectedOutTime: string,
+  _expectedReturnTime?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // التحقق: هل اليوم جمعة أو عطلة؟

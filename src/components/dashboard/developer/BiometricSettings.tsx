@@ -45,6 +45,10 @@ interface AttendanceConfig {
   work_start_time: string;
   work_end_time: string;
   grace_period_minutes: number;
+  /** نوع قاعدة بيانات البصمة (zkteco / supabase / external) */
+  databaseType?: string;
+  /** وقت انتهاء الاتصال بالجهاز بالثواني */
+  timeout?: number;
 }
 
 function StatCard({ icon: Icon, label, value, color, sub }: { icon: any; label: string; value: string | number; color: string; sub?: string }) {

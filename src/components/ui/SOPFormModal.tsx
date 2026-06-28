@@ -4,7 +4,7 @@ import {
   Plus, Upload, Trash2, Layers, BookOpen
 } from 'lucide-react';
 import type { SOP, SOPStatus, SOPSection } from '../../types/sops';
-import type { RichContent, MediaFile } from '../../types/media';
+import type { RichContent } from '../../types/media';
 import { SOP_DEPARTMENTS, SOP_CATEGORIES } from '../../types/sops';
 import RichContentEditor from './RichContentEditor';
 
@@ -38,7 +38,6 @@ interface SOPFormModalProps {
   saving: boolean;
 }
 
-const generateId = () => `sop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const generateSectionId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
 const EMPTY_CONTENT: RichContent = { blocks: [], mediaFiles: [] };

@@ -7,7 +7,7 @@
 
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi, beforeAll, afterAll } from 'vitest';
 
 // تنظيف DOM بعد كل اختبار
 afterEach(() => {
@@ -17,7 +17,7 @@ afterEach(() => {
 // محاكاة window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation((query) => ({
+  value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,
@@ -42,16 +42,12 @@ class MockIntersectionObserver {
 
 global.IntersectionObserver = MockIntersectionObserver as any;
 
-// محاكاة localStorage
-const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-  length: 0,
-  key: vi.fn(),
-};
-global.localStorage = localStorageMock as any;
+// localStorage: نعتمد على التطبيق الحقيقي الذي يوفّره jsdom
+// (يدعم getItem/setItem/removeItem/clear + التعداد عبر Object.keys).
+// ملاحظة: أي mock مع vi.fn() يكسر اختبارات notificationManager لأنه لا يخزن فعلياً.
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 // محاكاة console.error لتجنب الرسائل المزعجة في الاختبارات
 const originalError = console.error;
@@ -71,5 +67,3 @@ beforeAll(() => {
 afterAll(() => {
   console.error = originalError;
 });
-
-import { beforeAll, afterAll } from 'vitest';

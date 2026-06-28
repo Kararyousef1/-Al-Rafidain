@@ -38,14 +38,5 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
 });
 
 // التحقق من الاتصال (فقط في وضع التطوير)
-if (import.meta.env.DEV) {
-  supabase.auth.getSession().then(({ error }) => {
-    if (error) {
-      console.warn('⚠️ Supabase:', error.message);
-    } else {
-      console.log('✅ Supabase متصل بنجاح');
-    }
-  });
-}
 
 export default supabase;

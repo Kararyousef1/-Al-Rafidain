@@ -29,10 +29,11 @@ import {
   Check, Send, ZoomIn, ZoomOut, Target, Megaphone,
   Facebook, Twitter, Linkedin, Instagram, Youtube, Sparkles, Eye, FileText,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useUIStore } from '../../store';
 import { supabase } from '../../lib/supabase';
 import type {
-  LandingConfig, LandingVideo, LandingProduct, LandingAgent, LandingStat,
+  LandingVideo, LandingProduct, LandingAgent, LandingStat,
 } from '../../types/landing';
 
 interface LandingPageProps {
@@ -41,13 +42,8 @@ interface LandingPageProps {
   previewDevice?: 'desktop' | 'tablet' | 'mobile';
 }
 
-// ─── أنواع أيقونات مساعدة (بدلاً من any) ─────────────────────────
-type IconType = React.ComponentType<{
-  size?: number | string;
-  className?: string;
-  strokeWidth?: number;
-  style?: React.CSSProperties;
-}>;
+// ─── نوع الأيقونات الموحَّد (LucideIcon متوافق 100% مع مكونات lucide-react) ────
+type IconType = LucideIcon;
 
 interface NavLinkItem {
   id: string;
@@ -313,9 +309,9 @@ export default function LandingPage({
   const navLinks: NavLinkItem[] = [
     { id: 'home', icon: Home, label: t.navHome },
     { id: 'about', icon: Building2, label: t.navAbout },
-    ...(landingConfig.showCareSection ? [{ id: 'care', icon: HeartPulse as IconType, label: t.navCare }] : []),
-    ...(landingConfig.showMarketingSection ? [{ id: 'marketing', icon: Target as IconType, label: t.navMarketing }] : []),
-    ...(landingConfig.showAgentsSection ? [{ id: 'agents', icon: Users as IconType, label: t.navAgents }] : []),
+    ...(landingConfig.showCareSection ? [{ id: 'care', icon: HeartPulse, label: t.navCare }] : []),
+    ...(landingConfig.showMarketingSection ? [{ id: 'marketing', icon: Target, label: t.navMarketing }] : []),
+    ...(landingConfig.showAgentsSection ? [{ id: 'agents', icon: Users, label: t.navAgents }] : []),
     { id: 'products', icon: Package, label: t.navProducts },
     { id: 'location', icon: MapPin, label: t.navLocation },
   ];
@@ -660,7 +656,7 @@ export default function LandingPage({
                     <p className="anim-fade-up-2 text-base sm:text-lg text-white/75 leading-relaxed mb-8 sm:mb-10 max-w-xl">{t.heroDesc}</p>
 
                     <div className="anim-fade-up-3 flex flex-wrap gap-2 sm:gap-3 mb-8 sm:mb-10">
-                      {[{ icon: Shield as IconType, label: t.trusted }, { icon: Award as IconType, label: t.quality }, { icon: Zap as IconType, label: t.innovation }].map((f, i) => {
+                      {[{ icon: Shield, label: t.trusted }, { icon: Award, label: t.quality }, { icon: Zap, label: t.innovation }].map((f, i) => {
                         const FIcon = f.icon;
                         return (
                           <div key={i} className="flex items-center gap-2 px-3 sm:px-4 py-2 glass rounded-full text-white text-xs sm:text-sm font-bold">
@@ -757,7 +753,7 @@ export default function LandingPage({
 
                     <Reveal delay={0.15}>
                       <div className="grid sm:grid-cols-3 gap-4 pt-2">
-                        {[{ icon: Shield as IconType, title: t.certQuality, desc: t.strictStd }, { icon: Zap as IconType, title: t.fastDelivery, desc: t.wideNet }, { icon: Award as IconType, title: t.longExp, desc: t.decades }].map((f, i) => {
+                        {[{ icon: Shield, title: t.certQuality, desc: t.strictStd }, { icon: Zap, title: t.fastDelivery, desc: t.wideNet }, { icon: Award, title: t.longExp, desc: t.decades }].map((f, i) => {
                           const FIcon = f.icon;
                           return (
                             <div key={i} className="p-5 xl:p-6 rounded-2xl border border-slate-100 hover:border-transparent card-hover group cursor-default" style={{ background: `linear-gradient(135deg, rgba(${tcRgb},0.05), rgba(${tcRgb},0.02))` }}>

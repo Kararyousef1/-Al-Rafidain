@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store';
-import { Megaphone, ArrowLeft, Sparkles, ChevronLeft } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 
 const WELCOME_KEY = 'hr_welcome_shown_v2';
 

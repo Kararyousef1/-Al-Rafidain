@@ -20,6 +20,8 @@ export interface SOPSection {
   title: string;
   order: number;
   content: string;
+  duration?: string;            // مدة القراءة المتوقعة للقسم
+  isRequired?: boolean;          // هل القسم إلزامي
   mediaFiles?: MediaFile[];
 }
 

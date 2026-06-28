@@ -1,19 +1,14 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  NotificationBell - جرس الإشعارات (نسخة مُصلحة)
+ *  NotificationBell - جرس الإشعارات (نسخة مُصلحة بالكامل)
  * ════════════════════════════════════════════════════════════════
  *
- *  🔧 الإصلاحات المُطبّقة (حسب تقرير الحالة - المرحلة 2):
- *  ─────────────────────────────────────────────────────────────────
- *  ✅ جلب العدد من fetchNotificationsFromServer() (Supabase = مصدر الحقيقة)
- *  ✅ الاشتراك في Realtime لتحديث العدد فوراً (subscribeToRealtimeNotifications)
- *  ✅ استخدام state محلي بدلاً من useUIStore
- *  ✅ لا كتابة مزدوجة: العمليات تذهب للخادم فقط
- *  ✅ تحديثات تفاؤلية (Optimistic UI) مع استرجاع عند الفشل
- *  ✅ إزالة جميع console.log من الإنتاج
- *  ✅ إصلاح جميع أخطاء الصياغة (markdown artifacts + template literals)
- *  ✅ معالجة أخطاء صامتة + outside-click (محفوظ)
- *  ✅ setActiveView يبقى للتنقل فقط (استخدام مشروع لـ useUIStore)
+ *  🔧 الإصلاحات:
+ *  ✅ يستخدم useNotificationSubscription Hook الموحد (لا تكرار منطق)
+ *  ✅ البيانات من Realtime محوّلة عبر transformServerNotification
+ *  ✅ لا حاجة لإدارة state يدوياً أو Realtime منفصل
+ *  ✅ إدارة أخطاء موحدة + استرجاع عند الفشل
+ *  ✅ إغلاق القائمة عند النقر خارجها
  *  ════════════════════════════════════════════════════════════════
  */
 
@@ -22,15 +17,7 @@ import { Bell, CheckCheck, Trash2, ChevronLeft, RefreshCw, AlertCircle } from 'l
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { useUIStore, useAuthStore } from '../../store';
-
-// ─── خدمات الإشعارات (Supabase = مصدر الحقيقة) ───────────────────
-import {
-  fetchNotificationsFromServer,
-  subscribeToRealtimeNotifications,
-  markAsReadOnServer,
-  markAllAsReadOnServer,
-  deleteNotificationOnServer,
-} from '../../lib/notificationService';
+import { useNotificationSubscription } from '../../hooks/useNotificationSubscription';
 
 import type { AppNotification } from '../../constants/notificationTypes';
 
@@ -62,63 +49,26 @@ export default function NotificationBell({
   maxDisplay = 5,
 }: NotificationBellProps) {
   const { user } = useAuthStore();
-  // ⚠️ نأخذ setActiveView فقط للتنقل — لا لإدارة بيانات الإشعارات
   const { setActiveView } = useUIStore();
 
-  // ─── الحالة المحلية (البديل عن useUIStore) ─────────────────────
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // استخدام userId من props أو user الحالي
+  // ✅ استخدام userId من props أو user الحالي
   const currentUserId = propUserId || user?.id;
 
-  // ─── جلب الإشعارات من الخادم ──────────────────────────────────
-  const loadNotifications = useCallback(async (uid: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchNotificationsFromServer(uid, 20);
-      setNotifications(data);
-    } catch (err) {
-      console.error('[NotificationBell] فشل جلب الإشعارات:', err);
-      setError('تعذّر تحميل الإشعارات');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // ─── الجلب الأولي + الاشتراك في Realtime ──────────────────────
-  useEffect(() => {
-    if (!currentUserId) {
-      setNotifications([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    loadNotifications(currentUserId);
-
-    const unsubscribe = subscribeToRealtimeNotifications(
-      currentUserId,
-      (newNotif: AppNotification) => {
-        if (cancelled) return;
-        setNotifications((prev) => {
-          if (prev.some((n) => n.id === newNotif.id)) return prev;
-          return [newNotif, ...prev];
-        });
-      }
-    );
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [currentUserId, loadNotifications]);
+  // ✅ Hook الموحد يدير: الجلب + Realtime + العمليات
+  const {
+    notifications,
+    unreadCount,
+    loading,
+    error,
+    refresh,
+    markAsRead,
+    markAllRead,
+    deleteNotification,
+  } = useNotificationSubscription(currentUserId, { limit: 20, realtime: true });
 
   // ─── إغلاق القائمة عند النقر خارجها ───────────────────────────
   useEffect(() => {
@@ -134,7 +84,7 @@ export default function NotificationBell({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [open]);
 
-  // ─── العمليات (Optimistic + Server + استرجاع) ──────────────────
+  // ─── العمليات ──────────────────────────────────────────────────
 
   const handleNotificationClick = useCallback(
     async (notif: AppNotification) => {
@@ -142,68 +92,38 @@ export default function NotificationBell({
 
       const target = notif.actionUrl ? notif.actionUrl : 'my-notifications';
 
-      // تحديد كمقروء (تفاؤلي) ثم إغلاق والتنقل فوراً
+      // تحديد كمقروء (Hook يتعامل مع التفاؤلية)
       if (!notif.read) {
-        setNotifications((cur) =>
-          cur.map((n) => (n.id === notif.id ? { ...n, read: true, readAt: new Date().toISOString() } : n))
-        );
-        try {
-          await markAsReadOnServer(currentUserId, notif.id);
-        } catch (err) {
-          console.error('[NotificationBell] فشل تحديد كمقروء:', err);
-          // نترك الحالة التفاؤلية (مقبول للجرس - سيُصحَّح عند الجلب التالي)
-        }
+        await markAsRead(notif.id);
       }
 
       setOpen(false);
       setActiveView(target);
     },
-    [currentUserId, setActiveView]
+    [currentUserId, markAsRead, setActiveView]
   );
 
   const handleMarkAllRead = useCallback(async () => {
-    if (!currentUserId) return;
-
-    const hasUnread = notifications.some((n) => !n.read);
-    if (!hasUnread) return;
-
-    const now = new Date().toISOString();
-    setNotifications((cur) => cur.map((n) => (n.read ? n : { ...n, read: true, readAt: now })));
+    if (unreadCount === 0) return;
     setActionLoading(true);
-
     try {
-      await markAllAsReadOnServer(currentUserId);
-    } catch (err) {
-      console.error('[NotificationBell] فشل تحديد الكل كمقروء:', err);
-      setError('تعذّر تحديث الإشعارات');
+      await markAllRead();
     } finally {
       setActionLoading(false);
     }
-  }, [currentUserId, notifications]);
+  }, [unreadCount, markAllRead]);
 
   const handleDelete = useCallback(
     async (e: React.MouseEvent, notifId: string) => {
       e.stopPropagation();
-      if (!currentUserId) return;
-
-      const snapshot = notifications;
-      setNotifications((cur) => cur.filter((n) => n.id !== notifId));
-
-      try {
-        await deleteNotificationOnServer(currentUserId, notifId);
-      } catch (err) {
-        console.error('[NotificationBell] فشل الحذف:', err);
-        setNotifications(snapshot); // استرجاع
-        setError('تعذّر حذف الإشعار');
-      }
+      await deleteNotification(notifId);
     },
-    [currentUserId, notifications]
+    [deleteNotification]
   );
 
   const handleRefresh = useCallback(async () => {
-    if (!currentUserId) return;
-    await loadNotifications(currentUserId);
-  }, [currentUserId, loadNotifications]);
+    await refresh();
+  }, [refresh]);
 
   const goToNotificationsPage = useCallback(() => {
     setOpen(false);
@@ -211,14 +131,13 @@ export default function NotificationBell({
   }, [setActiveView]);
 
   // ─── المتغيرات المشتقة ────────────────────────────────────────
-  const unreadCount = notifications.filter((n) => !n.read).length;
   const displayedNotifications = notifications.slice(0, maxDisplay);
   const iconSize = size === 'sm' ? 16 : size === 'md' ? 18 : 20;
   const bellTitle = unreadCount > 0 ? `الإشعارات (${unreadCount} غير مقروء)` : 'الإشعارات';
 
   // ─── التحقق من المتطلبات ───────────────────────────────────────
   if (!currentUserId) {
-    return null; // لا نعرض الجرس إذا لم يكن هناك مستخدم
+    return null;
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -299,7 +218,7 @@ export default function NotificationBell({
                 <span>{error}</span>
               </div>
               <button
-                onClick={() => { setError(null); handleRefresh(); }}
+                onClick={() => { refresh(); }}
                 className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
               >
                 إعادة

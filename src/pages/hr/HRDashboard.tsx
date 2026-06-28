@@ -97,8 +97,17 @@ export default function HRDashboard() {
       let reviews: any[] = [];
       
       try {
-        const res1 = await supabase.from('profiles').select('*');
-        if (!res1.error && res1.data) profiles = res1.data;
+        const res1 = await supabase.from('employees').select('id, full_name_ar, department_id, is_active, status');
+        if (!res1.error && res1.data) {
+          // جلب أسماء الأقسام
+          const { data: depts } = await supabase.from('departments').select('id, name_ar');
+          const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
+          profiles = res1.data.map((e: { id: string; full_name_ar?: string; department_id?: string; is_active?: boolean; status?: string }) => ({
+            ...e,
+            full_name: e.full_name_ar || '',
+            department: deptMap.get(e.department_id || '') || '',
+          }));
+        }
       } catch (e) {}
       
       // Fallback for local users
@@ -188,7 +197,7 @@ export default function HRDashboard() {
         if (deptMap[dept]) deptMap[dept].problemCount++;
       });
       well.forEach(w => {
-        const emp = emps.find(p => p.id === w.employee_id);
+        const emp = emps.find(p => p.id === (w.employee_id || w.user_id));
         const d = emp?.department || 'عام';
         if (deptMap[d]) { deptMap[d].wellnessTotal += w.score; deptMap[d].wellnessCount++; }
       });
@@ -506,7 +515,7 @@ export default function HRDashboard() {
                         {inc.title}
                       </p>
                       <p className="text-xs text-slate-500 mt-1 truncate">
-                        {inc.reporter?.full_name || 'مجهول'} · {inc.created_at ? format(new Date(inc.created_at), 'dd MMM', { locale: ar }) : ''}
+                        {inc.reporter?.full_name || inc.reporter?.full_name_ar || 'مجهول'} · {inc.created_at ? format(new Date(inc.created_at), 'dd MMM', { locale: ar }) : ''}
                       </p>
                     </div>
                   </div>

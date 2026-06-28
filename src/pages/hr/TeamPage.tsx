@@ -44,10 +44,19 @@ export default function TeamPage() {
       setError(null);
       
       try {
-        const resProfiles = await supabase.from('profiles').select('id, full_name, email, department, position, phone, status, role');
+        const resProfiles = await supabase.from('employees').select('id, full_name_ar, department_id, is_active, position, phone, email, role');
         if (resProfiles.error) throw resProfiles.error;
         
-        const profilesData = resProfiles.data || [];
+        // جلب أسماء الأقسام
+        const { data: depts } = await supabase.from('departments').select('id, name_ar');
+        const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
+        
+        const profilesData = (resProfiles.data || []).map((e: any) => ({
+          ...e,
+          full_name: e.full_name_ar || '',
+          department: deptMap.get(e.department_id || '') || '',
+          status: e.is_active ? 'active' : 'inactive',
+        }));
         
         if (profilesData.length === 0) {
           setEmployees([]);
@@ -76,9 +85,10 @@ export default function TeamPage() {
           };
         });
         setEmployees(mappedData);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error fetching employees:', err);
-        setError(`فشل في جلب البيانات: ${err.message || 'تأكد من تشغيل كود إضافة عمود role في قاعدة البيانات'}`);
+        const msg = err instanceof Error ? err.message : 'خطأ غير معروف';
+        setError(`فشل في جلب البيانات: ${msg}`);
         setEmployees([]);
       } finally {
         setLoading(false);

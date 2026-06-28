@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  ArrowRight, Clock, User, MessageSquare, Send, Paperclip,
+  ArrowRight, Clock, User as UserIcon, MessageSquare, Send, Paperclip,
   CheckCircle, XCircle, TrendingUp,
   Sparkles, Calendar, MapPin,
   AlertCircle, Loader2, Check, ChevronDown,
@@ -474,7 +474,7 @@ export default function ProblemDetail({ problemId }: { problemId: string }) {
                 <h3 className="text-sm font-bold text-slate-700 mb-4">معلومات الموظف</h3>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <User size={16} className="text-slate-400" />
+                    <UserIcon size={16} className="text-slate-400" />
                     <div><p className="text-xs text-slate-500">الاسم</p><p className="text-sm font-medium text-slate-800">{problem.employee_name}</p></div>
                   </div>
                   {problem.department && (

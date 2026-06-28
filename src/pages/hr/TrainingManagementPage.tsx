@@ -343,9 +343,16 @@ export default function TrainingManagementPage() {
 
   const fetchCertifications = async () => {
     try {
-      const { data, error } = await supabase.from('employee_certifications').select('*, profiles!inner(full_name, email)').order('issue_date', { ascending: false });
+      const { data, error } = await supabase.from('employee_certifications').select('*, employees!inner(full_name_ar, email)').order('issue_date', { ascending: false });
       if (error) throw error;
-      if (data) setCertifications((data as CertRow[]).map(convertRowToCert));
+      // جلب أسماء الأقسام + معالجة employees → full_name_ar
+      if (data) {
+        const mapped = (data as any[]).map((c) => ({
+          ...c,
+          profiles: c.employees ? { full_name: c.employees.full_name_ar || '', email: c.employees.email || '' } : null,
+        }));
+        setCertifications(mapped.map(convertRowToCert));
+      }
     } catch (err) {
       console.error('Failed to load certifications:', getErrorMessage(err));
     }

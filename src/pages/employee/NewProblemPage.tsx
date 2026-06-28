@@ -43,6 +43,7 @@ const CATEGORY_LABELS: Record<ProblemCategory, string> = {
   management: 'إدارة',
   workplace: 'بيئة عمل',
   salary: 'رواتب',
+  safety: 'سلامة',
   other: 'أخرى',
 };
 

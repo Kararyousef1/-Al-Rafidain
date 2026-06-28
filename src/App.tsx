@@ -1,18 +1,16 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  App - الجذر الرئيسي (نسخة مُصلحة — Mobile/Tablet P0)
+ *  App - الجذر الرئيسي (نسخة مُحسَّنة — Loading Flow Fix)
  * ════════════════════════════════════════════════════════════════
  *
- *  🔧 الإصلاحات المُطبّقة (المرحلة 4 P0):
- *  ─────────────────────────────────────────────────────────────────
+ *  🔧 الإصلاحات المُطبّقة:
+ *  ✅ sessionStorage → localStorage (الإقرار يُحفَظ عبر الجلسات)
+ *  ✅ ترتيب التحقق: localStorage أولاً قبل initialize() لتقليل الانتظار
+ *  ✅ AuthLoader: محسَّن بشاشة أكثر احترافية (progress bar)
+ *  ✅ إضافة timeout للـ initialize (10 ثواني) + رسالة خطأ للمستخدم
  *  ✅ إزالة wrapper المتعارض مع fixed positioning للـ Sidebar
- *  ✅ إضافة backdrop معتم على الموبايل (يغلق Sidebar عند النقر)
- *  ✅ Sidebar مغلق افتراضياً على الموبايل، مفتوح على الديسكتوب
- *  ✅ إغلاق تلقائي عند تصغير النافذة تحت lg
- *  ✅ توحيد breakpoints على lg (Sidebar + المحتوى)
- *  ✅ تنظيف markdown artifacts (window.location.search, <style>)
- *  ✅ ترتيب DOM: Header ← Sidebar ← backdrop ← Content
- *     (Sidebar يظهر فوق Header عند الفتح عبر z-50)
+ *  ✅ Sidebar: مغلق افتراضياً على الموبايل، مفتوح على الديسكتوب
+ *  ✅ backdrop معتم على الموبايل يغلق Sidebar عند النقر
  *  ════════════════════════════════════════════════════════════════
  */
 
@@ -76,24 +74,41 @@ const AIInsightsDashboard = lazy(() => import('./pages/employee/AIInsightsDashbo
 //  Loaders
 // ════════════════════════════════════════════════════════════════
 
-const SPIN_KEYFRAMES = `@keyframes spin { to { transform: rotate(360deg); } }`;
+const SPIN_CSS = `@keyframes spin{to{transform:rotate(360deg)}}@keyframes prog{from{width:15%}to{width:85%}}`;
 
 function PageLoader() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: '16px' }}>
-      <div style={{ width: '40px', height: '40px', border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>جاري التحميل...</p>
-      <style>{SPIN_KEYFRAMES}</style>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh', gap:'16px' }}>
+      <div style={{ width:'36px', height:'36px', border:'3px solid #e2e8f0', borderTopColor:'#4f46e5', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <p style={{ color:'#94a3b8', fontSize:'0.875rem' }}>جاري التحميل...</p>
+      <style>{SPIN_CSS}</style>
     </div>
   );
 }
 
-function AuthLoader() {
+function AuthLoader({ timedOut }: { timedOut?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f8fafc', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ width: '48px', height: '48px', border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ color: '#64748b' }}>جاري التحقق من الجلسة...</p>
-      <style>{SPIN_KEYFRAMES}</style>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#f8fafc', flexDirection:'column', gap:'20px' }}>
+      <style>{SPIN_CSS}</style>
+      <div style={{ width:'56px', height:'56px', border:'3px solid #e2e8f0', borderTopColor:'#4f46e5', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      
+      {/* شريط التقدم */}
+      <div style={{ width:'200px', height:'4px', background:'#e2e8f0', borderRadius:'2px', overflow:'hidden' }}>
+        <div style={{ height:'100%', background:'#4f46e5', borderRadius:'2px', animation:'prog 2s ease-in-out infinite alternate' }} />
+      </div>
+
+      <p style={{ color:'#64748b', fontSize:'0.9rem' }}>
+        {timedOut ? '⚠️ استغرق الاتصال وقتاً طويلاً — يرجى التحقق من الاتصال بالإنترنت' : 'جاري التحقق من الجلسة...'}
+      </p>
+      
+      {timedOut && (
+        <button
+          onClick={() => window.location.reload()}
+          style={{ padding:'8px 20px', background:'#4f46e5', color:'#fff', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.875rem' }}
+        >
+          إعادة المحاولة
+        </button>
+      )}
     </div>
   );
 }
@@ -179,7 +194,6 @@ function PageRenderer() {
     }
   };
 
-  // ✅ المحتوى يتحرك فقط على lg+ (ديسكتوب). على الموبايل/التابلت الـ Sidebar يتراكب (overlay)
   return (
     <div className={`transition-all duration-300 min-h-screen pt-16 ${sidebarOpen ? 'lg:mr-64' : 'lg:mr-16'}`}>
       <main className="p-4 sm:p-6 min-h-[calc(100vh-64px)]">
@@ -197,18 +211,36 @@ export default function App() {
   const { isAuthenticated, user, loading, initialize } = useAuthStore();
   const { activeView, setActiveView, sidebarOpen, setSidebarOpen } = useUIStore();
   const [showLogin, setShowLogin] = useState(false);
-  const [disclaimerPassed, setDisclaimerPassed] = useState(() => sessionStorage.getItem('disclaimer_passed') === 'true');
-  const [guidePassed, setGuidePassed] = useState(() => sessionStorage.getItem('guide_passed') === 'true');
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+
+  // ✅ localStorage بدلاً من sessionStorage — يُحفَظ عبر الجلسات
+  const [disclaimerPassed, setDisclaimerPassed] = useState(
+    () => localStorage.getItem('disclaimer_passed') === 'true'
+  );
+  const [guidePassed, setGuidePassed] = useState(
+    () => localStorage.getItem('guide_passed') === 'true'
+  );
+
   const isPreviewMode = window.location.search.includes('preview=true');
 
-  useEffect(() => { if (!isPreviewMode) initialize(); }, [isPreviewMode, initialize]);
+  // ✅ Timeout للـ initialize (10 ثواني)
+  useEffect(() => {
+    if (isPreviewMode) return;
+    initialize();
+
+    const timeout = setTimeout(() => {
+      if (loading) setAuthTimedOut(true);
+    }, 10_000);
+
+    return () => clearTimeout(timeout);
+  }, [isPreviewMode, initialize]);
 
   // ✅ ضبط الـ Sidebar: مفتوح على الديسكتوب، مغلق على الموبايل
   useEffect(() => {
     setSidebarOpen(window.innerWidth >= 1024);
   }, [setSidebarOpen]);
 
-  // ✅ إغلاق تلقائي عند تصغير النافذة إلى الموبايل/التابلت
+  // ✅ إغلاق تلقائي عند تصغير النافذة
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 1024) setSidebarOpen(false);
@@ -233,14 +265,30 @@ export default function App() {
   }, [user?.role, setActiveView]);
 
   if (isPreviewMode) return <><LandingPage onLoginClick={() => {}} /><ToastContainer /></>;
-  if (loading) return <AuthLoader />;
+  if (loading) return <AuthLoader timedOut={authTimedOut} />;
 
   if (!disclaimerPassed) {
-    return <DisclaimerPage onAccess={() => { setDisclaimerPassed(true); sessionStorage.setItem('disclaimer_passed', 'true'); }} />;
+    return (
+      <DisclaimerPage
+        onAccess={() => {
+          setDisclaimerPassed(true);
+          localStorage.setItem('disclaimer_passed', 'true');
+        }}
+      />
+    );
   }
+
   if (!guidePassed) {
-    return <SystemGuide onSkip={() => { setGuidePassed(true); sessionStorage.setItem('guide_passed', 'true'); }} />;
+    return (
+      <SystemGuide
+        onSkip={() => {
+          setGuidePassed(true);
+          localStorage.setItem('guide_passed', 'true');
+        }}
+      />
+    );
   }
+
   if (!isAuthenticated) {
     if (showLogin) return <><LoginPage onNavigate={() => {}} /><ToastContainer /></>;
     return <><LandingPage onLoginClick={() => setShowLogin(true)} /><ToastContainer /></>;
@@ -248,13 +296,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50" dir="rtl" style={{ fontFamily: "'Tajawal', 'Cairo', sans-serif" }}>
-      {/* ✅ Header أولاً في DOM (الأساس) */}
       <Header />
-
-      {/* ✅ Sidebar يُرسم فوق Header عبر z-50 */}
       <Sidebar />
 
-      {/* ✅ Backdrop معتم على الموبايل/التابلت فقط (يغلق Sidebar عند النقر) */}
+      {/* Backdrop معتم على الموبايل/التابلت */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden animate-in fade-in duration-200"

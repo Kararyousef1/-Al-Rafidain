@@ -23,6 +23,8 @@ import {
   Terminal, AlertOctagon, Layers, BarChart3, Radio,
   ArrowRightLeft, TrendingUp, Fingerprint, ScrollText,
   FolderKanban, CalendarClock, Megaphone, ClipboardCheck,
+  Receipt, CreditCard, DollarSign, ShieldAlert, FileText,
+  Briefcase, UserPlus,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { UserRole } from '../../types';
@@ -96,6 +98,14 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'employee-profile', label: 'حسابي', icon: User, roles: ['employee', 'supervisor', 'manager'], section: 'personal', permKey: 'profile' },
     ],
   },
+  {
+    key: 'employee-finance', label: 'المالية والرواتب', roles: ['employee', 'supervisor', 'manager'],
+    items: [
+      { id: 'employee-payroll', label: 'رواتبي', icon: TrendingUp, roles: ['employee', 'supervisor', 'manager'], section: 'employee-finance' },
+      { id: 'employee-loans', label: 'سلفي', icon: ArrowRightLeft, roles: ['employee', 'supervisor', 'manager'], section: 'employee-finance' },
+      { id: 'employee-expenses', label: 'نفقاتي', icon: Receipt, roles: ['employee', 'supervisor', 'manager'], section: 'employee-finance' },
+    ],
+  },
 
   // ─── 👨‍💼 SUPERVISOR / MANAGER ───
   {
@@ -125,7 +135,27 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'hr-team', label: 'إدارة الموظفين', icon: Users, roles: ['hr'], section: 'hr-people', permKey: 'team' },
       { id: 'hr-talent-market', label: 'سجل المؤهلات', icon: Award, roles: ['hr'], section: 'hr-people', permKey: 'talent-market' },
+      { id: 'hr-recruitment', label: 'التوظيف', icon: Briefcase, roles: ['hr'], section: 'hr-people' },
+      { id: 'hr-onboarding', label: 'التعريف وإنهاء الخدمة', icon: UserPlus, roles: ['hr'], section: 'hr-people' },
+      { id: 'hr-documents', label: 'مستندات الموظفين', icon: FileText, roles: ['hr'], section: 'hr-people' },
       { id: 'hr-communication', label: 'صندوق الرسائل', icon: MessageSquare, roles: ['hr'], section: 'hr-people', permKey: 'communication', badge: 0 },
+    ],
+  },
+  {
+    key: 'hr-finance', label: 'الرواتب والمالية', roles: ['hr'],
+    items: [
+      { id: 'hr-payroll', label: 'الرواتب', icon: DollarSign, roles: ['hr'], section: 'hr-finance' },
+      { id: 'hr-loans', label: 'السلف والقروض', icon: CreditCard, roles: ['hr'], section: 'hr-finance' },
+      { id: 'hr-bonuses', label: 'الجوائز والمكافآت', icon: Award, roles: ['hr'], section: 'hr-finance' },
+      { id: 'hr-expenses', label: 'طلبات النفقات', icon: Receipt, roles: ['hr'], section: 'hr-finance' },
+    ],
+  },
+  {
+    key: 'hr-performance', label: 'الأداء والتأديب', roles: ['hr'],
+    items: [
+      { id: 'hr-performance', label: 'تقييم الأداء', icon: TrendingUp, roles: ['hr'], section: 'hr-performance' },
+      { id: 'hr-disciplinary', label: 'الإجراءات التأديبية', icon: ShieldAlert, roles: ['hr'], section: 'hr-performance' },
+      { id: 'hr-shifts', label: 'جدولة الورديات', icon: CalendarClock, roles: ['hr'], section: 'hr-performance' },
     ],
   },
   {

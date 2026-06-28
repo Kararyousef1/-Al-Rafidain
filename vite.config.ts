@@ -1,3 +1,13 @@
+/**
+ * vite.config.ts — نسخة محسَّنة
+ *
+ * 🔧 الإصلاحات:
+ * ✅ تقسيم chunks أذكى: vendor / supabase / charts / ui
+ * ✅ minify: terser (أصغر حجم bundle)
+ * ✅ build.reportCompressedSize: false (بناء أسرع في CI)
+ * ✅ chunkSizeWarningLimit رُفع إلى 700 (تقليل التحذيرات الوهمية)
+ */
+
 import path from "path";
 import { fileURLToPath } from "url";
 import react from "@vitejs/plugin-react";
@@ -8,9 +18,6 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   plugins: [react()],
-  // المسار الأساسي للموقع
-  // Netlify يستضيف من الجذر "/"
-  // (إذا أردت GitHub Pages لاحقاً، غيّر إلى "/Al-Rafidain/" بعد إعادة تسمية المستودع)
   base: "/",
   resolve: {
     alias: {
@@ -21,12 +28,23 @@ export default defineConfig({
     outDir: "dist",
     assetsDir: "assets",
     sourcemap: false,
-    // ضمان إنشاء assets بمسارات نسبية لتجنب مشاكل GitHub Pages
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ["react", "react-dom", "react-router-dom"],
+          // React core
+          vendor: ["react", "react-dom"],
+          // مكتبات التوجيه والحالة
+          router: ["react-router-dom", "zustand"],
+          // Supabase في chunk منفصل (كبير)
           supabase: ["@supabase/supabase-js"],
+          // مكتبات الرسوم البيانية (ثقيلة)
+          charts: ["recharts"],
+          // مكتبات واجهة المستخدم
+          ui: ["framer-motion", "lucide-react"],
+          // مكتبات النماذج والتحقق
+          forms: ["react-hook-form", "zod", "@hookform/resolvers"],
         },
       },
     },

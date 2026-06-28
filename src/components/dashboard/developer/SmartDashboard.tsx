@@ -5,7 +5,6 @@ import { errorStore, ErrorTrackerPanel } from './ErrorBoundary';
 import AppErrorBoundary from './ErrorBoundary';
 import SystemMonitor from './SystemMonitor';
 import { securityService, SecurityEvent } from '../../../lib/securityService';
-
 interface RealStats { totalUsers: number; activeUsers: number; totalIncidents: number; openIncidents: number; totalSurveys: number; totalSOPs: number; totalNotifications: number; totalProblems: number; dbLatency: number; errorCount: number; securityEvents: number; failedLogins: number; systemHealth: number; }
 interface SmartDashboardProps { onSwitchToClassic?: () => void; realStats?: RealStats; }
 

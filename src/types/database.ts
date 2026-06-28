@@ -10,6 +10,30 @@ export interface Database {
       wellness_entries: { Row: WellnessEntry; Insert: Partial<WellnessEntry>; Update: Partial<WellnessEntry> };
       attendance_logs: { Row: AttendanceRecord; Insert: Partial<AttendanceRecord>; Update: Partial<AttendanceRecord> };
       audit_logs: { Row: AuditLog; Insert: Partial<AuditLog>; Update: Partial<AuditLog> };
+      // ─── الجداول الجديدة (الرواتب + الوحدات الإضافية) ───
+      payroll_periods: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      payroll_records: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      payroll_allowances: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      payroll_deductions: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      employee_loans: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      loan_repayments: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      bonuses: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      payroll_settings: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      performance_cycles: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      performance_reviews: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      performance_goals: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      disciplinary_actions: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      employee_documents: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      expense_requests: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      shift_schedules: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      shift_assignments: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      shift_swap_requests: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      job_postings: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      job_applications: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      onboarding_tasks: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      employee_onboarding: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      offboarding_records: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
+      employee_contracts: { Row: Record<string, any>; Insert: Record<string, any>; Update: Record<string, any> };
     };
   };
 }

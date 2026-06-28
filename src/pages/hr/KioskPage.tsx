@@ -1,54 +1,64 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  KioskPage - بوابة الحارس (نسخة مُصلحة — Mobile/Tablet P0)
+ *  KioskPage - بوابة الحارس (نسخة مُصلحة — تسجيل بصمات صحيح)
  * ════════════════════════════════════════════════════════════════
  *
  *  🔧 الإصلاحات المُطبّقة:
  *  ─────────────────────────────────────────────────────────────────
- *  ✅ P0: شبكة الإحصائيات (3 أعمدة) → responsive (1/2/3 أعمدة)
- *  ✅ P0: شبكة المحتوى الرئيسية (عمودان) → responsive (1/2 عمود)
- *  ✅ P0: أحجام الخطوط والبطاقات تتكيّف مع الشاشة
- *  ✅ تنبيهات وإشعارات موحّدة عبر النظام الجديد
- *  ✅ تنظيف markdown artifacts (12+ موضع)
- *  ✅ إصلاح <style> المكسور
- *  ✅ إضافة حالات تحميل + معالجة أخطاء + إشعار HR بالتسجيل
+ *  ✅ استخدام attendance_logs بدلاً من time_logs (الجدول الصحيح)
+ *  ✅ تسجيل بصمة الدخول/الخروج مع تحديد الوردية تلقائياً
+ *  ✅ استخدام attendance_summary لعرض حالة كل موظف
+ *  ✅ منع تكرار البصمة (نفس البصمة مرتين متتاليتين)
+ *  ✅ عرض إحصائيات دقيقة من attendance_summary
+ *  ✅ ربط مع جدول employees بدلاً من profiles
+ *  ✅ إشعارات عند تسجيل الحضور والانصراف
  *  ════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { LogIn, LogOut, Search, CheckCircle, XCircle, Shield, Users, Clock, Loader2 } from 'lucide-react';
+import { LogIn, LogOut, Search, CheckCircle, XCircle, Shield, Users, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { useUIStore } from '../../store';
 import { notifyUser } from '../../lib/notificationService';
+import { getErrorMessage } from '../../lib/errors';
 
 // ════════════════════════════════════════════════════════════════
-//  Types
+//  أنواع البيانات
 // ════════════════════════════════════════════════════════════════
 
-interface AttendanceRecord {
+interface EmployeeRecord {
   id: string;
-  employee_id: string;
-  log_type: 'check_in' | 'check_out' | 'break_start' | 'break_end';
-  timestamp: string;
-  notes?: string;
-  employee?: { full_name: string; department: string };
-}
-
-interface Employee {
-  id: string;
-  full_name: string;
-  department: string;
-  position: string;
+  employee_code: string;
+  full_name_ar: string;
   email: string;
-  employeeId: string;
+  position: string;
+  is_active: boolean;
+  user_id: string | null;
+  department?: string;
+}
+
+interface AttendanceLogRecord {
+  id: number;
+  employee_id: string;
+  punch_time: string;
+  punch_type: string;
+  shift_type: string;
+  shift_date: string;
+  source: string;
+}
+
+interface EmployeeStatus {
+  employee_id: string;
   status: string;
-  user_id?: string;
+  check_in: string | null;
+  check_out: string | null;
+  shift_type: string | null;
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Hook: كشف حجم الشاشة (للـ responsive grid)
+//  Hook: كشف حجم الشاشة
 // ════════════════════════════════════════════════════════════════
 
 function useIsMobile() {
@@ -75,7 +85,7 @@ function useIsMobile() {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Main Component
+//  المكون الرئيسي
 // ════════════════════════════════════════════════════════════════
 
 export default function KioskPage() {
@@ -83,60 +93,93 @@ export default function KioskPage() {
   const { isMobile, isTablet } = useIsMobile();
 
   const [search, setSearch] = useState('');
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
+  const [todayLogs, setTodayLogs] = useState<AttendanceLogRecord[]>([]);
+  const [employeeStatuses, setEmployeeStatuses] = useState<Map<string, EmployeeStatus>>(new Map());
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [flash, setFlash] = useState<{ name: string; action: string; color: string } | null>(null);
-  const [stats, setStats] = useState({ present: 0, absent: 0, total: 0 });
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState({ present: 0, absent: 0, onLeave: 0, total: 0 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // ✅ الأعمدة responsive: موبايل = 1، تابلت = 2، ديسكتوب = 3
-  const statColumns = isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)';
-  // المحتوى: موبايل = عمود واحد، تابلت+ = عمودان
+  const statColumns = isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)';
   const mainColumns = isMobile ? '1fr' : '1fr 1fr';
 
-  // ─── تحديث الساعة كل ثانية ────────────────────────────────────
+  // تحديث الساعة
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // ─── جلب البيانات ────────────────────────────────────────────
+  // جلب البيانات
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const today = format(new Date(), 'yyyy-MM-dd');
 
-      const [{ data: emps, error: empsErr }, { data: att, error: attErr }] = await Promise.all([
-        supabase.from('profiles').select('id, full_name, email, department, position, employee_id, status, user_id'),
-        supabase.from('time_logs').select('*').gte('timestamp', today.toISOString()).order('timestamp', { ascending: false }),
-      ]);
+      // جلب الموظفين النشطين من جدول employees (الصحيح)
+      const { data: emps, error: empsErr } = await supabase
+        .from('employees')
+        .select('id, employee_code, full_name_ar, email, position, is_active, user_id, department_id')
+        .eq('is_active', true);
 
       if (empsErr) throw empsErr;
-      if (attErr) throw attErr;
 
-      const empList: Employee[] = (emps || []).map((e) => ({ ...e, employeeId: e.employee_id }));
+      // جلب أسماء الأقسام
+      const { data: depts } = await supabase.from('departments').select('id, name_ar');
+      const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
+
+      const empList: EmployeeRecord[] = (emps || []).map((e) => ({
+        ...e,
+        department: deptMap.get(e.department_id || '') || '',
+      }));
       setEmployees(empList);
 
-      setRecords(
-        (att || []).map((r) => ({ ...r, employee: empList.find((e) => e.id === r.employee_id) }))
-      );
+      // جلب سجلات البصمات لليوم من attendance_logs (الجدول الصحيح)
+      const { data: logs, error: logsErr } = await supabase
+        .from('attendance_logs')
+        .select('*')
+        .eq('shift_date', today)
+        .order('punch_time', { ascending: false });
+
+      if (logsErr) throw logsErr;
+      setTodayLogs((logs || []) as AttendanceLogRecord[]);
+
+      // جلب ملخص الحضور لليوم من attendance_summary
+      const { data: summaries } = await supabase
+        .from('attendance_summary')
+        .select('employee_id, status, check_in, check_out, shift_type')
+        .eq('shift_date', today);
+
+      const statusMap = new Map<string, EmployeeStatus>();
+      (summaries || []).forEach((s: EmployeeStatus) => {
+        statusMap.set(s.employee_id, s);
+      });
+      setEmployeeStatuses(statusMap);
 
       // إحصائيات
-      const checkedInIds = new Set((att || []).filter((r) => r.log_type === 'check_in').map((r) => r.employee_id));
-      const checkedOutIds = new Set((att || []).filter((r) => r.log_type === 'check_out').map((r) => r.employee_id));
-      const present = [...checkedInIds].filter((id) => !checkedOutIds.has(id)).length;
+      const present = (summaries || []).filter((s: EmployeeStatus) =>
+        s.status === 'حضور_بوقت' || s.status === 'متأخر' || s.status === 'زمنية_معتمدة' || s.status === 'زمنية_انتظار'
+      ).length;
+      const onLeave = (summaries || []).filter((s: EmployeeStatus) =>
+        s.status === 'مجاز' || s.status === 'إجازة_انتظار'
+      ).length;
 
-      setStats({ present, total: empList.length, absent: empList.length - present });
+      setStats({
+        present,
+        absent: empList.length - present - onLeave,
+        onLeave,
+        total: empList.length,
+      });
     } catch (err) {
       console.error('[KioskPage] فشل جلب البيانات:', err);
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -144,49 +187,82 @@ export default function KioskPage() {
     searchRef.current?.focus();
   }, [fetchData]);
 
-  // ─── فلترة الموظفين ──────────────────────────────────────────
-  const filteredEmployees = employees.filter(
-    (e) =>
-      (e.full_name || '').includes(search) ||
-      (e.email || '').includes(search) ||
-      e.employeeId?.includes(search) ||
-      e.department?.includes(search)
+  // فلترة الموظفين
+  const filteredEmployees = employees.filter((e) =>
+    (e.full_name_ar || '').includes(search) ||
+    (e.employee_code || '').includes(search) ||
+    (e.email || '').includes(search) ||
+    (e.department || '').includes(search)
   );
 
+  // تحديد آخر إجراء للموظف (دخول أم خروج)
   const getLastAction = (employeeId: string): 'check_in' | 'check_out' | null => {
-    const empRecords = records.filter((r) => r.employee_id === employeeId);
-    if (empRecords.length === 0) return null;
-    return empRecords[0].log_type as 'check_in' | 'check_out';
+    const empLogs = todayLogs
+      .filter((l) => l.employee_id === employeeId)
+      .sort((a, b) => new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime());
+    if (empLogs.length === 0) return null;
+    // عدد فردي = آخر بصمة كانت دخول → الإجراء التالي خروج
+    // عدد زوجي = آخر بصمة كانت خروج → الإجراء التالي دخول
+    return empLogs.length % 2 === 0 ? 'check_in' : 'check_out';
   };
 
-  // ─── تسجيل الحضور/الانصراف ────────────────────────────────────
-  const handleAttendance = async (employee: Employee, action: 'check_in' | 'check_out') => {
+  // تسجيل البصمة (دخول/خروج)
+  const handleAttendance = async (employee: EmployeeRecord, action: 'check_in' | 'check_out') => {
     setActionLoading(true);
+    setError(null);
     try {
+      const now = new Date();
+      const shiftDate = format(now, 'yyyy-MM-dd');
+
+      // التحقق من آخر بصمة لمنع التكرار
+      const empLogs = todayLogs
+        .filter((l) => l.employee_id === employee.id)
+        .sort((a, b) => new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime());
+
+      if (empLogs.length > 0) {
+        const lastAction = empLogs.length % 2 === 0 ? 'check_in' : 'check_out';
+        if (lastAction === action) {
+          setError(`الموظف ${employee.full_name_ar} مسجل ${action === 'check_in' ? 'دخول' : 'خروج'} بالفعل`);
+          setTimeout(() => setError(null), 3000);
+          setActionLoading(false);
+          return;
+        }
+      }
+
+      // إدخال البصمة في جدول attendance_logs
       const record = {
         employee_id: employee.id,
-        log_type: action,
-        timestamp: new Date().toISOString(),
-        notes: 'عبر بوابة الحارس',
+        punch_time: now.toISOString(),
+        shift_date: shiftDate,
+        source: 'ADMS',
+        verification_type: 'finger',
       };
 
-      const { error } = await supabase.from('time_logs').insert(record);
-      if (error) throw error;
+      const { error: insertErr } = await supabase
+        .from('attendance_logs')
+        .insert(record);
 
-      // ✅ إشعار الموظف (إن وُجد user_id)
+      if (insertErr) {
+        // إذا كان التكرار، نتجاهله (ON CONFLICT DO NOTHING)
+        if (!insertErr.message.includes('duplicate') && !insertErr.message.includes('unique')) {
+          throw insertErr;
+        }
+      }
+
+      // إشعار الموظف
       if (employee.user_id) {
         notifyUser(employee.user_id, {
           type: 'attendance_recorded',
           title: action === 'check_in' ? 'تم تسجيل دخولك' : 'تم تسجيل خروجك',
-          message: `${format(new Date(), 'HH:mm:ss')} — عبر بوابة الحارس`,
+          message: `${format(now, 'HH:mm:ss')} — عبر بوابة الحارس`,
           priority: 'low',
-          groupKey: `attendance-${employee.id}-${format(new Date(), 'yyyy-MM-dd')}-${action}`,
-        }).catch((err) => console.error('فشل إشعار الحضور:', err));
+          groupKey: `attendance-${employee.id}-${format(now, 'yyyy-MM-dd')}-${action}`,
+        }).catch((err: unknown) => console.error('فشل إشعار الحضور:', err));
       }
 
       // تأكيد بصري
       setFlash({
-        name: employee.full_name,
+        name: employee.full_name_ar,
         action: action === 'check_in' ? 'تسجيل دخول ✅' : 'تسجيل خروج 👋',
         color: action === 'check_in' ? '#10b981' : '#f59e0b',
       });
@@ -197,6 +273,7 @@ export default function KioskPage() {
       await fetchData();
     } catch (err) {
       console.error('[KioskPage] فشل التسجيل:', err);
+      setError(getErrorMessage(err));
     } finally {
       setActionLoading(false);
     }
@@ -216,7 +293,7 @@ export default function KioskPage() {
         padding: isMobile ? '1rem' : '1.5rem',
       }}
     >
-      {/* ── Flash تأكيد ── */}
+      {/* Flash تأكيد */}
       {flash && (
         <div
           style={{
@@ -246,7 +323,19 @@ export default function KioskPage() {
         </div>
       )}
 
-      {/* ── الهيدر ── */}
+      {/* رسالة خطأ */}
+      {error && (
+        <div style={{
+          background: '#ef444422', border: '1px solid #ef444444', borderRadius: '12px',
+          padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex',
+          alignItems: 'center', gap: '0.5rem', color: '#fca5a5', fontSize: '0.875rem',
+        }}>
+          <AlertTriangle size={16} />
+          {error}
+        </div>
+      )}
+
+      {/* الهيدر */}
       <div
         style={{
           display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap',
@@ -301,11 +390,12 @@ export default function KioskPage() {
         </div>
       </div>
 
-      {/* ── الإحصائيات (responsive grid) ── */}
+      {/* الإحصائيات */}
       <div style={{ display: 'grid', gridTemplateColumns: statColumns, gap: '1rem', marginBottom: '1.5rem' }}>
         {[
           { label: 'الحاضرون', value: stats.present, color: '#10b981', icon: CheckCircle },
           { label: 'الغائبون', value: stats.absent, color: '#ef4444', icon: XCircle },
+          { label: 'المجازون', value: stats.onLeave, color: '#f59e0b', icon: Clock },
           { label: 'إجمالي الموظفين', value: stats.total, color: '#6366f1', icon: Users },
         ].map(({ label, value, color, icon: Icon }, i) => (
           <div
@@ -334,11 +424,10 @@ export default function KioskPage() {
         ))}
       </div>
 
-      {/* ── المحتوى الرئيسي (responsive grid) ── */}
+      {/* المحتوى الرئيسي */}
       <div style={{ display: 'grid', gridTemplateColumns: mainColumns, gap: isMobile ? '1rem' : '1.5rem' }}>
-        {/* ── البحث والتسجيل ── */}
+        {/* البحث والتسجيل */}
         <div>
-          {/* حقل البحث */}
           <div style={{ position: 'relative', marginBottom: '1rem' }}>
             <Search size={18} color="#64748b" style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)' }} />
             <input
@@ -359,7 +448,6 @@ export default function KioskPage() {
             />
           </div>
 
-          {/* قائمة الموظفين */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '60vh', overflowY: 'auto' }}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: '#475569' }}>
@@ -374,7 +462,9 @@ export default function KioskPage() {
             ) : (
               filteredEmployees.map((emp) => {
                 const lastAction = getLastAction(emp.id);
-                const isIn = lastAction === 'check_in';
+                const isIn = lastAction === 'check_out'; // آخر بصمة فردية = دخل
+                const empStatus = employeeStatuses.get(emp.id);
+
                 return (
                   <div
                     key={emp.id}
@@ -385,7 +475,6 @@ export default function KioskPage() {
                       gap: '0.75rem',
                     }}
                   >
-                    {/* معلومات الموظف */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
                       <div
                         style={{
@@ -395,29 +484,34 @@ export default function KioskPage() {
                           color: 'white', fontWeight: 700, fontSize: '1rem', flexShrink: 0,
                         }}
                       >
-                        {emp.full_name?.charAt(0) || '؟'}
+                        {emp.full_name_ar?.charAt(0) || '؟'}
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <p style={{ color: 'white', fontWeight: 700, margin: 0, fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {emp.full_name || 'بدون اسم'}
+                          {emp.full_name_ar || 'بدون اسم'}
                         </p>
                         <p style={{ color: '#64748b', fontSize: '0.8rem', margin: 0 }}>
-                          {emp.department} · {emp.employeeId || 'بدون رقم'}
+                          {emp.department} · {emp.employee_code || 'بدون رقم'}
                         </p>
                       </div>
                     </div>
 
-                    {/* الحالة والأزرار */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                      {lastAction && (
+                      {empStatus && (
                         <span
                           style={{
-                            padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
-                            background: isIn ? '#10b98122' : '#f59e0b22',
-                            color: isIn ? '#10b981' : '#f59e0b',
+                            padding: '4px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 600,
+                            background: empStatus.status === 'حضور_بوقت' ? '#10b98122' :
+                              empStatus.status === 'متأخر' ? '#f59e0b22' :
+                              empStatus.status === 'غائب' ? '#ef444422' :
+                              empStatus.status === 'مجاز' ? '#6366f122' : '#334155',
+                            color: empStatus.status === 'حضور_بوقت' ? '#10b981' :
+                              empStatus.status === 'متأخر' ? '#f59e0b' :
+                              empStatus.status === 'غائب' ? '#ef4444' :
+                              empStatus.status === 'مجاز' ? '#6366f1' : '#94a3b8',
                           }}
                         >
-                          {isIn ? 'داخل' : 'خارج'}
+                          {empStatus.status || 'لم يحضر'}
                         </span>
                       )}
                       <button
@@ -435,13 +529,9 @@ export default function KioskPage() {
                         }}
                       >
                         {isIn ? (
-                          <>
-                            <LogOut size={14} /> خروج
-                          </>
+                          <><LogOut size={14} /> خروج</>
                         ) : (
-                          <>
-                            <LogIn size={14} /> دخول
-                          </>
+                          <><LogIn size={14} /> دخول</>
                         )}
                       </button>
                     </div>
@@ -452,59 +542,69 @@ export default function KioskPage() {
           </div>
         </div>
 
-        {/* ── سجل اليوم ── */}
+        {/* سجل اليوم */}
         <div>
           <h3 style={{ color: '#94a3b8', fontSize: '0.875rem', fontWeight: 600, margin: '0 0 1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            سجل اليوم — {records.length} سجل
+            سجل البصمات اليوم — {todayLogs.length} سجل
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '65vh', overflowY: 'auto' }}>
-            {records.length === 0 ? (
+            {todayLogs.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: '#475569' }}>
                 <Clock size={40} style={{ margin: '0 auto 1rem', opacity: 0.4 }} />
-                <p>لا توجد سجلات اليوم بعد</p>
+                <p>لا توجد بصمات مسجلة اليوم بعد</p>
               </div>
             ) : (
-              records.map((record) => (
-                <div
-                  key={record.id}
-                  style={{
-                    background: '#1e293b', borderRadius: '12px',
-                    padding: '0.875rem 1rem',
-                    border: `1px solid ${record.log_type === 'check_in' ? '#10b98133' : '#f59e0b33'}`,
-                    display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  }}
-                >
+              todayLogs.map((log, idx) => {
+                const emp = employees.find((e) => e.id === log.employee_id);
+                // تحديد نوع الإجراء بناءً على عدد بصمات الموظف حتى هذا السجل
+                const empPrevLogs = todayLogs
+                  .slice(0, idx + 1)
+                  .filter((l) => l.employee_id === log.employee_id);
+                const actionType = empPrevLogs.length % 2 === 1 ? 'check_in' : 'check_out';
+
+                return (
                   <div
+                    key={log.id}
                     style={{
-                      width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-                      background: record.log_type === 'check_in' ? '#10b98122' : '#f59e0b22',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: '#1e293b', borderRadius: '12px',
+                      padding: '0.875rem 1rem',
+                      border: `1px solid ${actionType === 'check_in' ? '#10b98133' : '#f59e0b33'}`,
+                      display: 'flex', alignItems: 'center', gap: '0.75rem',
                     }}
                   >
-                    {record.log_type === 'check_in' ? <LogIn size={16} color="#10b981" /> : <LogOut size={16} color="#f59e0b" />}
+                    <div
+                      style={{
+                        width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+                        background: actionType === 'check_in' ? '#10b98122' : '#f59e0b22',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {actionType === 'check_in' ? <LogIn size={16} color="#10b981" /> : <LogOut size={16} color="#f59e0b" />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ color: 'white', fontWeight: 600, margin: 0, fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {emp?.full_name_ar || 'غير محدد'}
+                      </p>
+                      <p style={{ color: '#64748b', fontSize: '0.75rem', margin: 0 }}>
+                        {emp?.department || 'بدون قسم'} · {log.shift_type || '—'}
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'left', flexShrink: 0 }}>
+                      <p style={{ fontWeight: 700, fontSize: '0.875rem', margin: 0, color: actionType === 'check_in' ? '#10b981' : '#f59e0b' }}>
+                        {actionType === 'check_in' ? 'دخول' : 'خروج'}
+                      </p>
+                      <p style={{ color: '#475569', fontSize: '0.75rem', margin: 0 }}>
+                        {log.punch_time ? format(new Date(log.punch_time), 'HH:mm:ss') : ''}
+                      </p>
+                    </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: 'white', fontWeight: 600, margin: 0, fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {record.employee?.full_name || 'غير محدد'}
-                    </p>
-                    <p style={{ color: '#64748b', fontSize: '0.75rem', margin: 0 }}>{record.employee?.department || 'بدون قسم'}</p>
-                  </div>
-                  <div style={{ textAlign: 'left', flexShrink: 0 }}>
-                    <p style={{ fontWeight: 700, fontSize: '0.875rem', margin: 0, color: record.log_type === 'check_in' ? '#10b981' : '#f59e0b' }}>
-                      {record.log_type === 'check_in' ? 'دخول' : 'خروج'}
-                    </p>
-                    <p style={{ color: '#475569', fontSize: '0.75rem', margin: 0 }}>
-                      {record.timestamp ? format(new Date(record.timestamp), 'HH:mm:ss') : ''}
-                    </p>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
       </div>
 
-      {/* ✅ <style> مُصلح (keyframes نظيفة) */}
       <style>{`
         @keyframes kioskFadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes spin { to { transform: rotate(360deg); } }

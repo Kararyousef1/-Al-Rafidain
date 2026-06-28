@@ -77,6 +77,8 @@ interface RealtimePayload {
   eventType?: string;
   new?: Record<string, unknown>;
   old?: Record<string, unknown>;
+  /** بيانات الحدث (تُستخدم للتعليقات الجديدة مثلاً) */
+  data?: Record<string, unknown>;
 }
 
 // ════════════════════════════════════════════════════════════════

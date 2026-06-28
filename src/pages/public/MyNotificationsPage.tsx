@@ -22,22 +22,16 @@ import {
   Bell, CheckCheck, Trash2, Filter, Search, X, Inbox,
   AlertCircle, CheckCircle, Info, AlertTriangle, XCircle,
   Calendar, Layers, Sparkles, Shield, Clock, UserCheck,
-  Users, DoorOpen, Gift, Star, Award, CreditCard, HardDrive,
-  Database, Bug, BookOpen, MessageSquare, Briefcase, Heart,
+  Users, DoorOpen, Gift, Star, Award, CreditCard,
+  Database, Bug, BookOpen, MessageSquare, Heart,
   TrendingUp, Laptop, FileText, Zap, Settings2, RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { useAuthStore, useUIStore } from '../../store';
 
-// ─── خدمات الإشعارات (Supabase = مصدر الحقيقة) ───────────────────
-import {
-  fetchNotificationsFromServer,
-  subscribeToRealtimeNotifications,
-  markAsReadOnServer,
-  markAllAsReadOnServer,
-  deleteNotificationOnServer,
-} from '../../lib/notificationService';
+// ─── Hook الموحد للإشعارات (يدير الجلب + Realtime + العمليات) ────
+import { useNotificationSubscription } from '../../hooks/useNotificationSubscription';
 
 // ─── دوال مساعدة نقية (Cache Manager) ─────────────────────────────
 import {
@@ -190,155 +184,64 @@ export default function MyNotificationsPage() {
   const { user } = useAuthStore();
   const { setActiveView } = useUIStore();
 
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  // ✅ Hook الموحد يدير: الجلب + Realtime + العمليات (تفاؤلية + استرجاع)
+  const {
+    notifications,
+    loading,
+    error,
+    refresh,
+    markAsRead,
+    markAllRead,
+    deleteNotification,
+    clearAll,
+  } = useNotificationSubscription(user?.id, { limit: 100, realtime: true, refetchOnFocus: true });
+
   const [filter, setFilter] = useState<NotificationFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // ─── جلب الإشعارات من الخادم + الاشتراك في Realtime ──────────
-  const loadNotifications = useCallback(async (userId: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchNotificationsFromServer(userId, 100);
-      setNotifications(data);
-      // تحديث الكاش المحلي (localStorage) من مصدر الحقيقة
-      try {
-        syncNotificationsFromServer(userId, data);
-      } catch {
-        /* الكاش فشل = غير حرج، تجاهل بصمت */
-      }
-    } catch (err) {
-      console.error('[MyNotificationsPage] فشل جلب الإشعارات:', err);
-      setError(err instanceof Error ? err.message : 'تعذّر تحميل الإشعارات من الخادم');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // ─── مزامنة localStorage كاش (غير حرج) ─────────────────────────
   useEffect(() => {
-    if (!user?.id) {
-      setNotifications([]);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    // ✅ الجلب الأولي من Supabase
-    loadNotifications(user.id);
-
-    // ✅ الاشتراك في Realtime (يغطي نفس التبويب + التبويبات الأخرى)
-    const unsubscribeRealtime = subscribeToRealtimeNotifications(
-      user.id,
-      (newNotif: AppNotification) => {
-        if (cancelled) return;
-        // منع التكرار عبر id، ثم الإضافة لأعلى القائمة
-        setNotifications((prev) => {
-          if (prev.some((n) => n.id === newNotif.id)) return prev;
-          return [newNotif, ...prev];
-        });
-      }
-    );
-
-    // ✅ تحديث عند العودة للتبويب (إعادة المزامنة من الخادم)
-    const handleFocus = () => {
-      if (!cancelled) loadNotifications(user.id);
-    };
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      cancelled = true;
-      unsubscribeRealtime();
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [user?.id, loadNotifications]);
-
-  // ─── العمليات (Optimistic + Server + استرجاع عند الفشل) ───────
-
-  const handleMarkAsRead = useCallback(async (id: string) => {
-    if (!user?.id) return;
-    const prev = notifications;
-
-    // تحديث تفاؤلي فوري
-    setNotifications((cur) =>
-      cur.map((n) => (n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n))
-    );
-
+    if (!user?.id || notifications.length === 0) return;
     try {
-      await markAsReadOnServer(user.id, id);
-    } catch (err) {
-      console.error('[markAsRead] فشل:', err);
-      setNotifications(prev); // استرجاع
-      setError('تعذّر تحديث حالة الإشعار على الخادم');
+      syncNotificationsFromServer(user.id, notifications);
+    } catch {
+      /* الكاش فشل = غير حرج */
     }
   }, [user?.id, notifications]);
+
+  // ─── العمليات (مع actionLoading) ────────────────────────────────
+  const handleMarkAsRead = useCallback(async (id: string) => {
+    await markAsRead(id);
+  }, [markAsRead]);
 
   const handleMarkAllRead = useCallback(async () => {
-    if (!user?.id) return;
-    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
-    if (unreadIds.length === 0) return;
-
-    const snapshot = notifications;
-    const now = new Date().toISOString();
-
-    // تحديث تفاؤلي
-    setNotifications((cur) => cur.map((n) => (n.read ? n : { ...n, read: true, readAt: now })));
     setActionLoading(true);
-
     try {
-      await markAllAsReadOnServer(user.id);
-    } catch (err) {
-      console.error('[markAllAsRead] فشل:', err);
-      setNotifications(snapshot); // استرجاع
-      setError('تعذّر تحديث الإشعارات على الخادم');
+      await markAllRead();
     } finally {
       setActionLoading(false);
     }
-  }, [user?.id, notifications]);
+  }, [markAllRead]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!user?.id) return;
-    const snapshot = notifications;
-
-    // حذف تفاؤلي
-    setNotifications((cur) => cur.filter((n) => n.id !== id));
-
-    try {
-      await deleteNotificationOnServer(user.id, id);
-    } catch (err) {
-      console.error('[delete] فشل:', err);
-      setNotifications(snapshot); // استرجاع
-      setError('تعذّر حذف الإشعار من الخادم');
-    }
-  }, [user?.id, notifications]);
+    await deleteNotification(id);
+  }, [deleteNotification]);
 
   const handleClearAll = useCallback(async () => {
-    if (!user?.id) return;
     if (notifications.length === 0) return;
     if (!confirm('هل أنت متأكد من حذف جميع الإشعارات؟ لا يمكن التراجع.')) return;
-
-    const snapshot = notifications;
-    const ids = notifications.map((n) => n.id);
-
-    // حذف تفاؤلي للكل
-    setNotifications([]);
     setActionLoading(true);
-
     try {
-      // حذف كل عنصر على الخادم (يحترم RLS)
-      await Promise.all(ids.map((id) => deleteNotificationOnServer(user.id, id)));
-    } catch (err) {
-      console.error('[clearAll] فشل جزئي:', err);
-      // إعادة الجلب لاستعادة الوضع الحقيقي من الخادم
-      await loadNotifications(user.id);
-      setError('تعذّر حذف بعض الإشعارات؛ تمت إعادة المزامنة');
+      await clearAll();
     } finally {
       setActionLoading(false);
     }
-  }, [user?.id, notifications, loadNotifications]);
+  }, [notifications.length, clearAll]);
+
+  const handleRefresh = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
 
   // ─── التوجيه عند الضغط على الإشعار ───────────────────────────
   const handleNotificationClick = useCallback((notif: AppNotification) => {
@@ -420,7 +323,7 @@ export default function MyNotificationsPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button
-              onClick={() => loadNotifications(user.id)}
+              onClick={handleRefresh}
               variant="secondary"
               size="sm"
               icon={<RefreshCw size={16} className={loading ? 'animate-spin' : ''} />}
@@ -540,7 +443,7 @@ export default function MyNotificationsPage() {
               <span>{error}</span>
             </div>
             <button
-              onClick={() => { setError(null); loadNotifications(user.id); }}
+              onClick={() => { handleRefresh(); }}
               className="text-sm text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1"
             >
               <RefreshCw size={14} /> إعادة المحاولة

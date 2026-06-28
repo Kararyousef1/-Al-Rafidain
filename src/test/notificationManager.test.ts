@@ -124,8 +124,8 @@ describe('NotificationManager', () => {
       expect(getUserNotifications(USER_1)).toHaveLength(2);
     });
 
-    it('should limit to 50 notifications max', () => {
-      for (let i = 0; i < 60; i++) {
+    it('should limit to 100 notifications max', () => {
+      for (let i = 0; i < 110; i++) {
         addNotification(USER_1, {
           type: 'info',
           priority: 'normal',
@@ -133,7 +133,7 @@ describe('NotificationManager', () => {
           message: `m${i}`,
         });
       }
-      expect(getUserNotifications(USER_1)).toHaveLength(50);
+      expect(getUserNotifications(USER_1)).toHaveLength(100);
     });
 
     it('should return null when userId is missing', () => {
@@ -359,8 +359,8 @@ describe('NotificationManager', () => {
     });
 
     it('should handle corrupted localStorage gracefully', () => {
-      // محاكاة بيانات فاسدة
-      localStorage.setItem(`hr_notifications_${USER_1}`, 'not-valid-json');
+      // محاكاة بيانات فاسدة بمفتاح الكاش الصحيح
+      localStorage.setItem(`hr_notifications_cache_${USER_1}`, 'not-valid-json');
       const notifs = getUserNotifications(USER_1);
       expect(notifs).toEqual([]);
     });
