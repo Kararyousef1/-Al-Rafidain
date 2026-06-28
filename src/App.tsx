@@ -17,6 +17,7 @@
 import { useEffect, Suspense, lazy, useState } from 'react';
 import { useAuthStore, useUIStore } from './store';
 import ToastContainer from './components/ui/Toast';
+import SplashScreen from './components/ui/SplashScreen';
 import Sidebar from './components/dashboard/Sidebar';
 import Header from './components/dashboard/Header';
 import LoginPage from './pages/auth/LoginPage';
@@ -74,43 +75,12 @@ const AIInsightsDashboard = lazy(() => import('./pages/employee/AIInsightsDashbo
 //  Loaders
 // ════════════════════════════════════════════════════════════════
 
-const SPIN_CSS = `@keyframes spin{to{transform:rotate(360deg)}}@keyframes prog{from{width:15%}to{width:85%}}`;
-
 function PageLoader() {
-  return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh', gap:'16px' }}>
-      <div style={{ width:'36px', height:'36px', border:'3px solid #e2e8f0', borderTopColor:'#4f46e5', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-      <p style={{ color:'#94a3b8', fontSize:'0.875rem' }}>جاري التحميل...</p>
-      <style>{SPIN_CSS}</style>
-    </div>
-  );
+  return <SplashScreen mini />;
 }
 
 function AuthLoader({ timedOut }: { timedOut?: boolean }) {
-  return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#f8fafc', flexDirection:'column', gap:'20px' }}>
-      <style>{SPIN_CSS}</style>
-      <div style={{ width:'56px', height:'56px', border:'3px solid #e2e8f0', borderTopColor:'#4f46e5', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-      
-      {/* شريط التقدم */}
-      <div style={{ width:'200px', height:'4px', background:'#e2e8f0', borderRadius:'2px', overflow:'hidden' }}>
-        <div style={{ height:'100%', background:'#4f46e5', borderRadius:'2px', animation:'prog 2s ease-in-out infinite alternate' }} />
-      </div>
-
-      <p style={{ color:'#64748b', fontSize:'0.9rem' }}>
-        {timedOut ? '⚠️ استغرق الاتصال وقتاً طويلاً — يرجى التحقق من الاتصال بالإنترنت' : 'جاري التحقق من الجلسة...'}
-      </p>
-      
-      {timedOut && (
-        <button
-          onClick={() => window.location.reload()}
-          style={{ padding:'8px 20px', background:'#4f46e5', color:'#fff', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.875rem' }}
-        >
-          إعادة المحاولة
-        </button>
-      )}
-    </div>
-  );
+  return <SplashScreen timedOut={timedOut} message={!timedOut ? 'جاري التحقق من الجلسة...' : undefined} />;
 }
 
 function DefaultPage({ role }: { role?: string }) {

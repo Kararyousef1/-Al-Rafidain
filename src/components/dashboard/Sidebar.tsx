@@ -37,10 +37,8 @@ import {
 import { getUserDisplayName } from '../../utils/userUtils';
 
 // ─── نظام الإشعارات الجديد (Supabase = مصدر الحقيقة) ────────────
-import {
-  fetchNotificationsFromServer,
-  subscribeToRealtimeNotifications,
-} from '../../lib/notificationService';
+// ✅ إصلاح: عداد الإشعارات يُقرأ عبر Hook الموحد بدل فتح channel جديد
+import { useNotificationSubscription } from '../../hooks/useNotificationSubscription';
 
 // ════════════════════════════════════════════════════════════════
 //  Types
@@ -261,7 +259,13 @@ export default function Sidebar() {
   const refreshUser = useAuthStore.getState().refreshUser;
   const { sidebarOpen, activeView, setActiveView, setSidebarOpen } = useUIStore();
   const [dynamicBadges, setDynamicBadges] = useState({ problems: 0, messages: 0 });
-  const [unreadCount, setUnreadCount] = useState(0);
+
+  // ✅ إصلاح: عداد الإشعارات عبر Hook الموحد — لا channel مستقل هنا
+  const { unreadCount } = useNotificationSubscription(user?.id ?? null, {
+    limit: 50,
+    realtime: true,
+    refetchOnFocus: false,
+  });
 
   const role = (user?.role as UserRole) || 'employee';
   const config = ROLE_CONFIG[role];
@@ -273,32 +277,7 @@ export default function Sidebar() {
     return () => clearInterval(interval);
   }, [refreshUser]);
 
-  // ─── عداد الإشعارات (Supabase + Realtime) ────────────────────
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
 
-    const loadUnread = async () => {
-      try {
-        const data = await fetchNotificationsFromServer(user.id, 50);
-        if (!cancelled) setUnreadCount(data.filter((n) => !n.read).length);
-      } catch (err) {
-        console.error('[Sidebar] فشل جلب عداد الإشعارات:', err);
-      }
-    };
-
-    loadUnread();
-
-    const unsubscribe = subscribeToRealtimeNotifications(user.id, (newNotif) => {
-      if (cancelled) return;
-      if (!newNotif.read) setUnreadCount((c) => c + 1);
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [user?.id]);
 
   // ─── شارات HR الديناميكية ────────────────────────────────────
   useEffect(() => {

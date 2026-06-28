@@ -1,22 +1,19 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  Header - نظام وادي الرافدين HR (نسخة مُصلحة — Mobile P0)
+ *  Header - نظام وادي الرافدين HR
  * ════════════════════════════════════════════════════════════════
  *
- *  🔧 الإصلاحات المُطبّقة:
- *  ─────────────────────────────────────────────────────────────────
- *  ✅ P0 حرج: mr-64 → lg:mr-64 (لا يطبّق margin على الموبايل!)
- *  ✅ تنظيف جميع markdown artifacts (20+ موضع)
- *  ✅ إصلاح جميع template literals المكسورة
- *  ✅ تنبيهات وإشعارات موحّدة عبر النظام الجديد
- *  ✅ عرض الإشعارات في القائمة المنسدلة يتوافق مع is_read
- *  ════════════════════════════════════════════════════════════════
+ *  ✅ إصلاح #1: حذف Realtime المكرر — لا يفتح أي channel هنا
+ *  ✅ إصلاح #2: يستخدم <NotificationBell> بدل state الإشعارات المحلي
+ *  ✅ إصلاح #3: حذف interface Notification المحلي (is_read مقابل read)
+ *  ✅ إصلاح #4: P0 Mobile — lg:mr-64 بدل mr-64
+ *
+ * ════════════════════════════════════════════════════════════════
  */
 
 import {
-  Menu, Bell, Search, Sun, Moon, Sunset, ChevronDown,
-  LogOut, User, Settings, X, Check, Clock, FileText,
-  AlertCircle,
+  Menu, Search, Sun, Moon, Sunset, ChevronDown,
+  LogOut, User, Settings, X, FileText, AlertCircle,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { useState, useRef, useEffect } from 'react';
@@ -24,17 +21,10 @@ import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { getUserDisplayName } from '../../utils/userUtils';
 
-// ✅ النظام الجديد للإشعارات
-import {
-  fetchNotificationsFromServer,
-  markAsReadOnServer,
-  markAllAsReadOnServer,
-  subscribeToRealtimeNotifications,
-} from '../../lib/notificationService';
+// ✅ NotificationBell هو المصدر الوحيد لعرض الإشعارات
+import NotificationBell from './NotificationBell';
 
-// ════════════════════════════════════════════════════════════════
-//  View Titles
-// ════════════════════════════════════════════════════════════════
+import type { LucideIcon } from 'lucide-react';
 
 export const viewTitles: Record<string, string> = {
   // Employee
@@ -112,18 +102,9 @@ interface QuickSearchItem {
   id: string;
   title: string;
   subtitle: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   category: 'page' | 'action';
   action: () => void;
-}
-
-interface Notification {
-  id: string | number;
-  title: string;
-  message: string;
-  type?: string;
-  is_read?: boolean;
-  created_at?: string;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -134,57 +115,24 @@ export default function Header() {
   const { user, logout } = useAuthStore();
   const { toggleSidebar, sidebarOpen, activeView, setActiveView } = useUIStore();
 
-  // ✅ State محلي للإشعارات
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [showNotifs, setShowNotifs] = useState(false);
+  // ✅ لا state للإشعارات هنا — NotificationBell يديرها بالكامل
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const notifRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const displayName = getUserDisplayName(user);
 
-  // ─── جلب الإشعارات من Supabase + Realtime ────────────────────
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const serverNotifs = await fetchNotificationsFromServer(user.id, 20);
-        if (cancelled) return;
-        setNotifications(serverNotifs as Notification[]);
-      } catch (err) {
-        console.error('[Header] فشل جلب الإشعارات:', err);
-      }
-    };
-
-    load();
-
-    const unsubscribe = subscribeToRealtimeNotifications(user.id, (newNotif) => {
-      if (cancelled) return;
-      setNotifications((prev) => {
-        if (prev.some((n) => n.id === newNotif.id)) return prev;
-        return [newNotif as Notification, ...prev];
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [user?.id]);
-
-  const unread = notifications.filter((n) => !n.is_read);
-
-  // ─── إغلاق القوائم عند النقر خارجها ───────────────────────────
+  // ─── إغلاق القوائم عند النقر خارجها ─────────────────────────
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) setShowNotifs(false);
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) setShowUserMenu(false);
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) setShowSearch(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSearch(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -193,11 +141,28 @@ export default function Header() {
   // ─── التحية حسب الوقت ────────────────────────────────────────
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return { text: 'صباح الخير', icon: Sun, gradient: 'from-amber-500 to-orange-500', bg: 'bg-amber-50', border: 'border-amber-200', textColor: 'text-amber-700' };
-    if (hour >= 12 && hour < 17) return { text: 'مساء الخير', icon: Sun, gradient: 'from-orange-500 to-red-500', bg: 'bg-orange-50', border: 'border-orange-200', textColor: 'text-orange-700' };
-    if (hour >= 17 && hour < 21) return { text: 'مساء النور', icon: Sunset, gradient: 'from-purple-500 to-pink-500', bg: 'bg-purple-50', border: 'border-purple-200', textColor: 'text-purple-700' };
-    return { text: 'ليلة طيبة', icon: Moon, gradient: 'from-indigo-500 to-purple-500', bg: 'bg-indigo-50', border: 'border-indigo-200', textColor: 'text-indigo-700' };
+    if (hour >= 5 && hour < 12) return {
+      text: 'صباح الخير', icon: Sun,
+      gradient: 'from-amber-500 to-orange-500',
+      bg: 'bg-amber-50', border: 'border-amber-200', textColor: 'text-amber-700',
+    };
+    if (hour >= 12 && hour < 17) return {
+      text: 'مساء الخير', icon: Sun,
+      gradient: 'from-orange-500 to-red-500',
+      bg: 'bg-orange-50', border: 'border-orange-200', textColor: 'text-orange-700',
+    };
+    if (hour >= 17 && hour < 21) return {
+      text: 'مساء النور', icon: Sunset,
+      gradient: 'from-purple-500 to-pink-500',
+      bg: 'bg-purple-50', border: 'border-purple-200', textColor: 'text-purple-700',
+    };
+    return {
+      text: 'ليلة طيبة', icon: Moon,
+      gradient: 'from-indigo-500 to-purple-500',
+      bg: 'bg-indigo-50', border: 'border-indigo-200', textColor: 'text-indigo-700',
+    };
   };
+
   const greeting = getGreeting();
   const GreetingIcon = greeting.icon;
   const today = format(new Date(), 'EEEE، d MMMM yyyy', { locale: ar });
@@ -211,17 +176,27 @@ export default function Header() {
         action: () => { setActiveView(id); setShowSearch(false); setSearchQuery(''); },
       });
     });
-    if (user?.role === 'employee' || user?.role === 'supervisor' || user?.role === 'manager') {
+    if (
+      user?.role === 'employee' ||
+      user?.role === 'supervisor' ||
+      user?.role === 'manager'
+    ) {
       items.push({
-        id: 'quick-problem', title: 'رفع بلاغ جديد', subtitle: 'إجراء سريع', icon: AlertCircle, category: 'action',
+        id: 'quick-problem', title: 'رفع بلاغ جديد', subtitle: 'إجراء سريع',
+        icon: AlertCircle, category: 'action',
         action: () => { setActiveView('new-problem'); setShowSearch(false); },
       });
     }
     return items;
   };
+
   const searchItems = getQuickSearchItems();
   const filteredItems = searchQuery.trim()
-    ? searchItems.filter((item) => item.title.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5)
+    ? searchItems
+        .filter((item) =>
+          item.title.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        .slice(0, 5)
     : [];
 
   // ─── عنوان الصفحة ────────────────────────────────────────────
@@ -230,48 +205,17 @@ export default function Header() {
     return viewTitles[activeView] || 'لوحة التحكم';
   };
 
-  // ─── أيقونة الإشعار ──────────────────────────────────────────
-  const getNotificationIcon = (type?: string) => {
-    switch (type) {
-      case 'success': return <Check size={14} className="text-emerald-500" />;
-      case 'warning': return <AlertCircle size={14} className="text-amber-500" />;
-      case 'error': return <X size={14} className="text-red-500" />;
-      default: return <Bell size={14} className="text-blue-500" />;
-    }
-  };
-
-  // ─── تحديد مقروء ─────────────────────────────────────────────
-  const handleMarkAsRead = async (notificationId: string | number) => {
-    if (!user?.id) return;
-    setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)));
-    try {
-      await markAsReadOnServer(user.id, notificationId);
-    } catch (err) {
-      console.error('[Header] فشل تحديد كمقروء:', err);
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    if (!user?.id) return;
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    try {
-      await markAllAsReadOnServer(user.id);
-    } catch (err) {
-      console.error('[Header] فشل تحديد الكل كمقروء:', err);
-    }
-  };
-
   return (
     <header
-      // ✅ P0 FIX: lg:mr-64 بدل mr-64 (لا margin على الموبايل!)
-      className={`
-        fixed top-0 left-0 right-0 z-30
-        bg-white/95 backdrop-blur-md border-b border-slate-100
-        shadow-sm transition-all duration-300
-        ${sidebarOpen ? 'lg:mr-64' : 'lg:mr-16'}
-      `}
+      className={[
+        'fixed top-0 left-0 right-0 z-30',
+        'bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm',
+        'transition-all duration-300',
+        sidebarOpen ? 'lg:mr-64' : 'lg:mr-16',
+      ].join(' ')}
     >
       <div className="flex items-center justify-between h-16 px-4 sm:px-6">
+
         {/* ── Left: Menu + Title ── */}
         <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
           <button
@@ -282,24 +226,28 @@ export default function Header() {
             <Menu size={20} />
           </button>
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold text-slate-800 truncate">{getPageTitle()}</h1>
+            <h1 className="text-base sm:text-lg font-bold text-slate-800 truncate">
+              {getPageTitle()}
+            </h1>
             <p className="text-xs text-slate-400 hidden sm:block truncate">{today}</p>
           </div>
         </div>
 
         {/* ── Right: Actions ── */}
         <div className="flex items-center gap-2 sm:gap-3">
+
           {/* Search */}
           <div className="relative" ref={searchRef}>
             <button
-              onClick={() => setShowSearch(!showSearch)}
+              onClick={() => setShowSearch((v) => !v)}
               className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
               aria-label="بحث"
             >
               <Search size={18} />
             </button>
+
             {showSearch && (
-              <div className="absolute left-0 top-12 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+              <div className="absolute left-0 top-12 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
                 <div className="p-3 border-b border-slate-100">
                   <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
                     <Search size={16} className="text-slate-400 flex-shrink-0" />
@@ -312,7 +260,10 @@ export default function Header() {
                       autoFocus
                     />
                     {searchQuery && (
-                      <button onClick={() => setSearchQuery('')} className="p-1 hover:bg-slate-200 rounded-lg transition-colors">
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="p-1 hover:bg-slate-200 rounded-lg transition-colors"
+                      >
                         <X size={14} className="text-slate-400" />
                       </button>
                     )}
@@ -332,7 +283,9 @@ export default function Header() {
                             <Icon size={16} className="text-indigo-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-700 truncate">{item.title}</p>
+                            <p className="text-sm font-semibold text-slate-700 truncate">
+                              {item.title}
+                            </p>
                             <p className="text-xs text-slate-400 truncate">{item.subtitle}</p>
                           </div>
                         </button>
@@ -349,89 +302,25 @@ export default function Header() {
           </div>
 
           {/* Greeting Badge */}
-          <div className={`hidden lg:flex items-center gap-2 ${greeting.bg} border ${greeting.border} rounded-xl px-3 py-2`}>
-            <GreetingIcon size={16} className={`bg-gradient-to-br ${greeting.gradient} bg-clip-text text-transparent`} />
-            <span className={`text-sm font-medium ${greeting.textColor}`}>{greeting.text}</span>
+          <div
+            className={`hidden lg:flex items-center gap-2 ${greeting.bg} border ${greeting.border} rounded-xl px-3 py-2`}
+          >
+            <GreetingIcon
+              size={16}
+              className={`bg-gradient-to-br ${greeting.gradient} bg-clip-text text-transparent`}
+            />
+            <span className={`text-sm font-medium ${greeting.textColor}`}>
+              {greeting.text}
+            </span>
           </div>
 
-          {/* Notifications */}
-          <div className="relative" ref={notifRef}>
-            <button
-              onClick={() => setShowNotifs(!showNotifs)}
-              className="relative p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-              aria-label="الإشعارات"
-            >
-              <Bell size={18} />
-              {unread.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {unread.length > 9 ? '9+' : unread.length}
-                </span>
-              )}
-            </button>
-            {showNotifs && (
-              <div className="absolute left-0 top-12 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
-                <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
-                  <div className="flex items-center gap-2">
-                    <Bell size={18} className="text-slate-700" />
-                    <span className="font-bold text-slate-800">الإشعارات</span>
-                    {unread.length > 0 && (
-                      <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">{unread.length}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {unread.length > 0 && (
-                      <button onClick={handleMarkAllAsRead} className="text-xs text-indigo-600 hover:text-indigo-800 font-bold">
-                        تحديد الكل كمقروء
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { setShowNotifs(false); setActiveView('my-notifications'); }}
-                      className="text-xs text-slate-500 hover:text-slate-700 font-bold"
-                    >
-                      عرض الكل
-                    </button>
-                  </div>
-                </div>
-                <div className="max-h-96 overflow-y-auto divide-y divide-slate-50">
-                  {notifications.slice(0, 6).map((notif) => (
-                    <div
-                      key={notif.id}
-                      onClick={() => handleMarkAsRead(notif.id)}
-                      className={`p-4 cursor-pointer hover:bg-slate-50 transition-colors ${!notif.is_read ? 'bg-blue-50/50' : ''}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 mt-0.5">{getNotificationIcon(notif.type)}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${!notif.is_read ? 'font-bold text-slate-800' : 'font-semibold text-slate-700'} truncate`}>
-                            {notif.title}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">{notif.message}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <Clock size={12} className="text-slate-400" />
-                            <span className="text-xs text-slate-400">
-                              {notif.created_at ? format(new Date(notif.created_at), 'PPp', { locale: ar }) : 'الآن'}
-                            </span>
-                          </div>
-                        </div>
-                        {!notif.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2" />}
-                      </div>
-                    </div>
-                  ))}
-                  {notifications.length === 0 && (
-                    <div className="text-center py-12">
-                      <Bell size={48} className="mx-auto mb-3 text-slate-300" />
-                      <p className="text-sm text-slate-400 font-semibold">لا توجد إشعارات</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* ✅ NotificationBell — يفتح channel واحد فقط ويدير كل شيء */}
+          <NotificationBell userId={user?.id ?? undefined} size="md" />
 
           {/* User Menu */}
           <div className="relative" ref={userMenuRef}>
             <button
-              onClick={() => setShowUserMenu(!showUserMenu)}
+              onClick={() => setShowUserMenu((v) => !v)}
               className="flex items-center gap-2 hover:bg-slate-50 rounded-xl px-2 py-1.5 transition-colors"
             >
               {user?.profile_image || user?.avatar ? (
@@ -446,13 +335,18 @@ export default function Header() {
                 </div>
               )}
               <div className="hidden md:block text-right">
-                <p className="text-sm font-semibold text-slate-700 leading-tight truncate max-w-[120px]">{displayName}</p>
-                <p className="text-xs text-slate-400 truncate max-w-[120px]">{user?.position || user?.role}</p>
+                <p className="text-sm font-semibold text-slate-700 leading-tight truncate max-w-[120px]">
+                  {displayName}
+                </p>
+                <p className="text-xs text-slate-400 truncate max-w-[120px]">
+                  {user?.position || user?.role}
+                </p>
               </div>
               <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
             </button>
+
             {showUserMenu && (
-              <div className="absolute left-0 top-12 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+              <div className="absolute left-0 top-12 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
                 <div className="p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border-b border-slate-100">
                   <div className="flex items-center gap-3">
                     {user?.profile_image || user?.avatar ? (
@@ -468,7 +362,9 @@ export default function Header() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-800 truncate">{displayName}</p>
-                      <p className="text-xs text-slate-500 truncate">{user?.email || user?.position || user?.role}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {user?.email || user?.position || user?.role}
+                      </p>
                     </div>
                   </div>
                 </div>

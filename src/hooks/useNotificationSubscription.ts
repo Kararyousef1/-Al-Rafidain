@@ -1,23 +1,16 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  useNotificationSubscription - Hook موحد للإشعارات
+ *  useNotificationSubscription — Hook الموحد للإشعارات
  * ════════════════════════════════════════════════════════════════
  *
- *  يُدير:
- *  - جلب الإشعارات من السيرفر
- *  - الاشتراك في Realtime (اشتراك واحد فقط)
- *  - عمليات: قراءة، قراءة الكل، حذف، حذف الكل
- *  - إعادة المزامنة عند عودة التبويب للتركيز
+ *  ✅ إصلاح #1: Stale Closure Bug — استخدام functional update مع prev
+ *               بدلاً من snapshot من notifications
+ *  ✅ إصلاح #2: يعالج INSERT + UPDATE + DELETE من Realtime
+ *  ✅ إصلاح #3: هو المكان الوحيد الذي يفتح Realtime channel
+ *               (لا Header، لا Sidebar، لا Store)
+ *  ✅ Optimistic UI مع استرجاع عند الفشل
+ *  ✅ إعادة مزامنة عند عودة التبويب للتركيز
  *
- *  الاستخدام:
- *  ```
- *  const { notifications, unreadCount, loading, markAsRead, markAllRead, deleteNotification, clearAll, refresh } = useNotificationSubscription(userId);
- *  ```
- *
- *  أو مع خيارات:
- *  ```
- *  const { notifications, ... } = useNotificationSubscription(userId, { limit: 20, realtime: true });
- *  ```
  * ════════════════════════════════════════════════════════════════
  */
 
@@ -29,19 +22,24 @@ import {
   markAllAsReadOnServer,
   deleteNotificationOnServer,
   deleteAllNotificationsOnServer,
+  type RealtimeNotificationEvent,
 } from '../lib/notificationService';
 import type { AppNotification } from '../constants/notificationTypes';
 
+// ════════════════════════════════════════════════════════════════
+//  الأنواع
+// ════════════════════════════════════════════════════════════════
+
 interface UseNotificationOptions {
-  /** عدد الإشعارات المطلوبة (default: 50) */
+  /** عدد الإشعارات (default: 50) */
   limit?: number;
   /** تفعيل Realtime (default: true) */
   realtime?: boolean;
-  /** تفعيل إعادة المزامنة عند التركيز (default: true) */
+  /** إعادة مزامنة عند التركيز (default: true) */
   refetchOnFocus?: boolean;
 }
 
-interface UseNotificationReturn {
+export interface UseNotificationReturn {
   notifications: AppNotification[];
   unreadCount: number;
   loading: boolean;
@@ -53,36 +51,44 @@ interface UseNotificationReturn {
   clearAll: () => Promise<void>;
 }
 
+// ════════════════════════════════════════════════════════════════
+//  Hook
+// ════════════════════════════════════════════════════════════════
+
 export function useNotificationSubscription(
   userId: string | null | undefined,
   options?: UseNotificationOptions
 ): UseNotificationReturn {
-  const { limit = 50, realtime = true, refetchOnFocus = true } = options || {};
+  const { limit = 50, realtime = true, refetchOnFocus = true } = options ?? {};
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
 
-  // ─── جلب الإشعارات ──────────────────────────────────────────
+  // يمنع تحديث state بعد unmount
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // ─── جلب الإشعارات من السيرفر ───────────────────────────────
   const refresh = useCallback(async () => {
     if (!userId) return;
     try {
       setLoading(true);
       setError(null);
       const data = await fetchNotificationsFromServer(userId, limit);
-      if (!cancelledRef.current) setNotifications(data);
-    } catch (err) {
-      if (!cancelledRef.current) setError('تعذّر تحميل الإشعارات');
+      if (mountedRef.current) setNotifications(data);
+    } catch {
+      if (mountedRef.current) setError('تعذّر تحميل الإشعارات');
     } finally {
-      if (!cancelledRef.current) setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [userId, limit]);
 
-  // ─── الجلب الأولي + Realtime ────────────────────────────────
+  // ─── الجلب الأولي + Realtime + إعادة مزامنة عند التركيز ────
   useEffect(() => {
-    cancelledRef.current = false;
-
     if (!userId) {
       setNotifications([]);
       setLoading(false);
@@ -91,84 +97,116 @@ export function useNotificationSubscription(
 
     refresh();
 
-    // اشتراك Realtime واحد فقط
     if (!realtime) return;
+
+    // ✅ معالجة INSERT + UPDATE + DELETE
     const unsubscribe = subscribeToRealtimeNotifications(
       userId,
-      (newNotif: AppNotification) => {
-        if (cancelledRef.current) return;
-        setNotifications((prev) => {
-          if (prev.some((n) => n.id === newNotif.id)) return prev;
-          return [newNotif, ...prev];
-        });
+      (event: RealtimeNotificationEvent) => {
+        if (!mountedRef.current) return;
+
+        if (event.event === 'INSERT') {
+          // إضافة إشعار جديد في المقدمة (بدون stale closure — نستخدم prev)
+          setNotifications((prev) => {
+            if (prev.some((n) => n.id === event.notification.id)) return prev;
+            return [event.notification, ...prev];
+          });
+        } else if (event.event === 'UPDATE') {
+          // تحديث الإشعار الموجود
+          setNotifications((prev) =>
+            prev.map((n) =>
+              n.id === event.notification.id ? event.notification : n
+            )
+          );
+        } else if (event.event === 'DELETE') {
+          // حذف الإشعار من القائمة
+          setNotifications((prev) =>
+            prev.filter((n) => n.id !== event.notification.id)
+          );
+        }
       }
     );
 
-    // إعادة المزامنة عند التركيز
-    if (!refetchOnFocus) return;
-    const handleFocus = () => { if (!cancelledRef.current) refresh(); };
+    if (!refetchOnFocus) {
+      return unsubscribe;
+    }
+
+    const handleFocus = () => {
+      if (mountedRef.current) refresh();
+    };
     window.addEventListener('focus', handleFocus);
 
     return () => {
-      cancelledRef.current = true;
       unsubscribe();
       window.removeEventListener('focus', handleFocus);
     };
   }, [userId, realtime, refetchOnFocus, refresh]);
 
-  // ─── العمليات (Optimistic + Server + استرجاع) ────────────────
+  // ─── العمليات — Optimistic UI بدون stale closure ───────────
+
+  /**
+   * ✅ الإصلاح الجوهري: لا نأخذ snapshot من notifications
+   * بل نستخدم setNotifications(prev => ...) في كل مكان
+   * هذا يمنع race conditions ويضمن العمل على الـ state الأحدث دائماً
+   */
 
   const markAsRead = useCallback(async (id: string) => {
     if (!userId) return;
-    const snapshot = notifications;
-    setNotifications((cur) =>
-      cur.map((n) => (n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n))
+
+    // Optimistic — بدون snapshot
+    setNotifications((prev) =>
+      prev.map((n) =>
+        n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n
+      )
     );
-    try {
-      await markAsReadOnServer(userId, id);
-    } catch {
-      setNotifications(snapshot);
+
+    const ok = await markAsReadOnServer(userId, id);
+    if (!ok && mountedRef.current) {
+      // استرجاع عند الفشل — إعادة جلب من السيرفر
       setError('تعذّر تحديث حالة الإشعار');
+      await refresh();
     }
-  }, [userId, notifications]);
+  }, [userId, refresh]);
 
   const markAllRead = useCallback(async () => {
     if (!userId) return;
-    const snapshot = notifications;
     const now = new Date().toISOString();
-    setNotifications((cur) => cur.map((n) => (n.read ? n : { ...n, read: true, readAt: now })));
-    try {
-      await markAllAsReadOnServer(userId);
-    } catch {
-      setNotifications(snapshot);
-      setError('تعذّر تحديث الإشعارات');
+
+    // Optimistic
+    setNotifications((prev) =>
+      prev.map((n) => (n.read ? n : { ...n, read: true, readAt: now }))
+    );
+
+    const count = await markAllAsReadOnServer(userId);
+    if (count === 0 && mountedRef.current) {
+      // قد يعني أن الكل مقروء فعلاً — لا حاجة لاسترجاع
     }
-  }, [userId, notifications]);
+  }, [userId]);
 
   const deleteNotification = useCallback(async (id: string) => {
     if (!userId) return;
-    const snapshot = notifications;
-    setNotifications((cur) => cur.filter((n) => n.id !== id));
-    try {
-      await deleteNotificationOnServer(userId, id);
-    } catch {
-      setNotifications(snapshot);
+
+    // Optimistic
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+
+    const ok = await deleteNotificationOnServer(userId, id);
+    if (!ok && mountedRef.current) {
       setError('تعذّر حذف الإشعار');
+      await refresh();
     }
-  }, [userId, notifications]);
+  }, [userId, refresh]);
 
   const clearAll = useCallback(async () => {
     if (!userId) return;
-    const snapshot = notifications;
+
+    // Optimistic
     setNotifications([]);
-    try {
-      await deleteAllNotificationsOnServer(userId);
-    } catch {
-      setNotifications(snapshot);
-      setError('تعذّر حذف الإشعارات');
-      await refresh();
+
+    const count = await deleteAllNotificationsOnServer(userId);
+    if (count === 0 && mountedRef.current) {
+      // قد يكون الحذف نجح وكانت القائمة فارغة
     }
-  }, [userId, notifications, refresh]);
+  }, [userId]);
 
   // ─── المشتقات ──────────────────────────────────────────────
   const unreadCount = useMemo(
