@@ -132,7 +132,7 @@ const viewMap: Record<string, React.ReactNode> = {
   'developer-structure': <StructureManager />,
 
   // Original views
-  'problem-detail': <div className="p-8 text-center"><p className="text-slate-500">تفاصيل المشكلة</p></div>,
+  'problem-detail': <div className="p-8 text-center"><p className="text-slate-500">تفاصيل البلاغ</p></div>,
   'welcome-page': <WelcomeModal />,
 };
 

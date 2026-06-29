@@ -26,6 +26,7 @@ import {
   fetchProblemById, fetchComments, addComment,
   updateProblemStatus, subscribeToProblemUpdates,
   type CommentDetail, type ProblemDetail as ProblemDetailType,
+  type AIAnalysis,
 } from '../../sdk/problems';
 import type { User } from '../../types';
 import Card from '../../components/ui/Card';
@@ -62,14 +63,7 @@ interface ProblemDetailUI {
   user_id?: string;
   created_at: string;
   updated_at?: string;
-  ai_analysis?: {
-    urgencyLevel: number;
-    sentiment: 'positive' | 'neutral' | 'negative';
-    suggestedAction?: string;
-    keywords?: string[];
-    similarIssues?: number;
-    estimatedResolutionTime?: string;
-  };
+  ai_analysis?: AIAnalysis;
   comments?: CommentDetail[];
   timeline?: TimelineEvent[];
   employee_name?: string;
@@ -129,10 +123,10 @@ const getMockProblem = (id: string, user: User | null): ProblemDetailUI => ({
   ai_analysis: {
     urgencyLevel: 7,
     sentiment: 'negative',
-    suggestedAction: 'إحالة لقسم الصيانة',
-    keywords: ['كمبيوتر', 'صيانة'],
-    similarIssues: 3,
-    estimatedResolutionTime: '2-3 أيام',
+    suggestedActions: ['إحالة لقسم الصيانة'],
+    tags: ['كمبيوتر', 'صيانة'],
+    summary: 'مشكلة في جهاز الكمبيوتر تحتاج صيانة عاجلة',
+    predictedResolutionTime: '2-3 أيام',
   },
   comments: [{
     id: '1', incident_id: id, user_id: 'hr-1', text: 'تم استلام البلاغ',
@@ -415,10 +409,10 @@ export default function ProblemDetail({ problemId }: { problemId: string }) {
                       <div className={`h-full rounded-full ${problem.ai_analysis.urgencyLevel >= 8 ? 'bg-red-500' : problem.ai_analysis.urgencyLevel >= 5 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${problem.ai_analysis.urgencyLevel * 10}%` }} />
                     </div>
                   </div>
-                  {problem.ai_analysis.suggestedAction && (
+                  {problem.ai_analysis.suggestedActions && problem.ai_analysis.suggestedActions.length > 0 && (
                     <div className="p-4 bg-white/60 rounded-xl">
                       <p className="text-sm font-medium text-indigo-700 mb-1">الإجراء المقترح:</p>
-                      <p className="text-sm text-indigo-900">{problem.ai_analysis.suggestedAction}</p>
+                      <p className="text-sm text-indigo-900">{problem.ai_analysis.suggestedActions.join('، ')}</p>
                     </div>
                   )}
                 </div>

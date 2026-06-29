@@ -568,7 +568,7 @@ const PERMISSION_GROUPS: PermCategory[] = [
     category: 'عام',
     perms: [
       { id: 'dashboard', label: 'لوحة التحكم',      icon: LayoutDashboard },
-      { id: 'problems',  label: 'المشاكل والطلبات', icon: FileText        },
+      { id: 'problems',  label: 'البلاغات والطلبات', icon: FileText        },
       { id: 'profile',   label: 'الملف الشخصي',    icon: UserCheck       },
     ],
   },

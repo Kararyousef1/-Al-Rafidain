@@ -6,6 +6,7 @@ interface CardProps {
   hover?: boolean;
   glass?: boolean;
   padding?: 'none' | 'sm' | 'md' | 'lg';
+  onClick?: () => void;
 }
 
 const paddingMap = {
@@ -15,15 +16,18 @@ const paddingMap = {
   lg: 'p-6',
 };
 
-export default function Card({ children, className = '', hover, glass, padding = 'md' }: CardProps) {
+export default function Card({ children, className = '', hover, glass, padding = 'md', onClick }: CardProps) {
   return (
-    <div className={`
-      bg-white rounded-2xl border border-slate-100 shadow-sm
-      ${hover ? 'card-hover cursor-pointer' : ''}
-      ${glass ? 'glass' : ''}
-      ${paddingMap[padding]}
-      ${className}
-    `}>
+    <div
+      onClick={onClick}
+      className={`
+        bg-white rounded-2xl border border-slate-100 shadow-sm
+        ${hover ? 'card-hover cursor-pointer' : ''}
+        ${glass ? 'glass' : ''}
+        ${paddingMap[padding]}
+        ${className}
+      `}
+    >
       {children}
     </div>
   );

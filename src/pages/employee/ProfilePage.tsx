@@ -111,7 +111,6 @@ export default function ProfilePage() {
   const [form, setForm] = useState({ name: user?.name || user?.full_name || '', phone: user?.phone || '' });
   const [saving, setSaving] = useState(false);
 
-  const [loadingExtras, setLoadingExtras] = useState(true);
   const [profileImage, setProfileImage] = useState<string>(user?.profile_image || '');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,12 +154,9 @@ export default function ProfilePage() {
   // ── جلب البيانات الإضافية ─────────────────────────────────────
   useEffect(() => {
     const fetchExtras = async () => {
-      setLoadingExtras(true);
-
       if (isLocalUser(user.id)) {
         setProfileImage('');
         setCvData({ ...EMPTY_CV });
-        setLoadingExtras(false);
         return;
       }
 
@@ -187,8 +183,6 @@ export default function ProfilePage() {
         }
       } catch (err) {
         console.error('فشل جلب البيانات الإضافية:', getErrorMessage(err));
-      } finally {
-        setLoadingExtras(false);
       }
     };
 

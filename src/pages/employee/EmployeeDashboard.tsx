@@ -34,6 +34,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar,
 } from 'recharts';
+import type { LucideIcon } from 'lucide-react';
 import { getErrorMessage } from '../../lib/errors';
 
 // ════════════════════════════════════════════════════
@@ -77,14 +78,35 @@ interface TrendDataPoint {
   wellness: number;
 }
 
-type IconType = React.ComponentType<{ size?: number; className?: string }>;
-
 interface QuickAction {
   label: string;
-  icon: IconType;
+  icon: LucideIcon;
   action: () => void;
   color: string;
 }
+
+/**
+ * حساب عدد أيام الحضور المتتالية (streak) من سجل الحضور الحقيقي.
+ * يبدأ من أحدث سجل ويعدّ الأيام المتتالية غير الغائبة.
+ */
+const calculateStreakFromAttendance = (records: AttendanceRecord[]): number => {
+  if (!records.length) return 0;
+  let streak = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = 0; i < records.length; i++) {
+    const recordDate = new Date(records[i].shift_date);
+    recordDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((today.getTime() - recordDate.getTime()) / 86400000);
+    // السجل مُرتّب تنازلياً حسب التاريخ: نتوقع فرق = i (اليوم، أمس، قبل أمس...)
+    if (diffDays === i && records[i].status !== 'غائب') {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return streak;
+};
 
 // ════════════════════════════════════════════════════
 // المكون الرئيسي
@@ -103,9 +125,7 @@ export default function EmployeeDashboard() {
     attendanceRate: 0,
   });
   const [recentProblems, setRecentProblems] = useState<Problem[]>([]);
-  const [wellnessHistory, setWellnessHistory] = useState<WellnessEntry[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>('week');
-  const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [problemTrend, setProblemTrend] = useState<TrendDataPoint[]>([]);
 
   const fetchDashboardData = useCallback(async () => {
@@ -122,15 +142,13 @@ export default function EmployeeDashboard() {
       const attendance = (attendanceRes.data || []) as AttendanceRecord[];
 
       setRecentProblems(problems.slice(0, 5));
-      setWellnessHistory(wellness);
-      setAttendanceData(attendance);
 
       setStats({
         totalProblems: problems.length,
         resolvedProblems: problems.filter((p) => p.status === 'resolved' || p.status === 'closed').length,
         pendingProblems: problems.filter((p) => p.status === 'pending').length,
         wellnessScore: wellness[0]?.score || 0,
-        streak: Math.floor(Math.random() * 7) + 1,
+        streak: calculateStreakFromAttendance(attendance),
         attendanceRate: attendance.length > 0 ? Math.round((attendance.filter((a) => a.status !== 'غائب').length / attendance.length) * 100) : 0,
       });
 
@@ -153,7 +171,7 @@ export default function EmployeeDashboard() {
   useEffect(() => { fetchDashboardData(); }, [fetchDashboardData]);
 
   const quickActions: QuickAction[] = [
-    { label: 'مشكلة جديدة', icon: Plus, action: () => setActiveView('new-problem'), color: 'bg-gradient-to-br from-rose-500 to-pink-600' },
+    { label: 'بلاغ جديد', icon: Plus, action: () => setActiveView('new-problem'), color: 'bg-gradient-to-br from-rose-500 to-pink-600' },
     { label: 'طلب إجازة', icon: Calendar, action: () => setActiveView('employee-leave-requests'), color: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
     { label: 'تسجيل مزاج', icon: Heart, action: () => setActiveView('employee-wellness'), color: 'bg-gradient-to-br from-violet-500 to-purple-600' },
     { label: 'تدريب', icon: BookOpen, action: () => setActiveView('employee-training'), color: 'bg-gradient-to-br from-amber-500 to-orange-600' },
@@ -210,7 +228,7 @@ export default function EmployeeDashboard() {
           <CardHeader>
             <CardTitle>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500">المشاكل</span>
+                <span className="text-xs font-bold text-slate-500">البلاغات</span>
                 <FileText size={16} className="text-indigo-500" />
               </div>
               <div className="text-2xl font-extrabold mt-2">{stats.totalProblems}</div>
@@ -266,7 +284,7 @@ export default function EmployeeDashboard() {
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle><span className="text-sm font-bold text-slate-700">تحليل المشاكل</span></CardTitle>
+            <CardTitle><span className="text-sm font-bold text-slate-700">تحليل البلاغات</span></CardTitle>
           </CardHeader>
           <div className="px-4 pb-4" dir="ltr">
             <ResponsiveContainer width="100%" height={200}>
@@ -319,7 +337,7 @@ export default function EmployeeDashboard() {
         <CardHeader>
           <CardTitle>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-slate-700">آخر المشاكل</span>
+              <span className="text-sm font-bold text-slate-700">آخر البلاغات</span>
               <Button size="sm" variant="ghost" onClick={() => setActiveView('employee-problems')}>عرض الكل</Button>
             </div>
           </CardTitle>
@@ -328,7 +346,7 @@ export default function EmployeeDashboard() {
           {recentProblems.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <CheckCircle size={32} className="mx-auto mb-2 text-emerald-400" />
-              <p className="font-bold text-sm">لا توجد مشاكل! 🎉</p>
+              <p className="font-bold text-sm">لا توجد بلاغات! 🎉</p>
             </div>
           ) : (
             recentProblems.slice(0, 5).map((problem) => (
@@ -359,7 +377,7 @@ export default function EmployeeDashboard() {
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2"><Target size={16} className="text-indigo-600" /><span className="text-xs font-bold text-indigo-600">الإنتاجية</span></div>
               <p className="text-lg font-extrabold text-slate-800">{stats.resolvedProblems > 0 ? Math.round((stats.resolvedProblems / stats.totalProblems) * 100) : 100}%</p>
-              <p className="text-xs text-slate-500 mt-1">نسبة إنجاز المشاكل</p>
+              <p className="text-xs text-slate-500 mt-1">نسبة إنجاز البلاغات</p>
             </div>
             <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2"><Flame size={16} className="text-emerald-600" /><span className="text-xs font-bold text-emerald-600">التسلسل</span></div>

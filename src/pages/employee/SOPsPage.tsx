@@ -1,19 +1,17 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  BookOpen, CheckCircle, Clock, Award, Search, Filter, X, FileText,
-  Eye, Layers, ChevronDown, ChevronLeft, ChevronRight, Play, Pause,
-  CheckSquare, Circle, Volume2, VolumeX, Maximize2, Minimize2,
-  ThumbsUp, Download, Share2, Timer, Brain, Lightbulb, ArrowRight,
-  ArrowLeft, Home, AlertTriangle, Shield, Users, BookMarked,
-  GraduationCap, BarChart3, List, Settings, Loader2, Upload,
-  Trash2, Plus, Edit3, Save, RefreshCw, Info, Star, Target,
-  Check, AlertCircle, Clock as ClockIcon, Calendar, Tag
+  BookOpen, CheckCircle, Clock, Search, X, FileText,
+  Eye, Play, Pause,
+  CheckSquare, Circle,
+  Download, Timer, Lightbulb,
+  AlertTriangle, Loader2,
+  Check, Tag,
 } from 'lucide-react';
 import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { supabase } from '../../lib/supabase';
 import { useUIStore, useAuthStore } from '../../store';
-import type { SOP, SOPReading, SOPViewMode, SOPApprovalStatus } from '../../types/sops';
+import type { SOP, SOPReading, SOPViewMode } from '../../types/sops';
 import { SOP_DEPARTMENTS, SOP_CATEGORIES } from '../../types/sops';
 
 // ── Translations ──
@@ -94,9 +92,6 @@ const translations = {
   }
 };
 
-// ── سيتم تحميل SOPs من قاعدة البيانات لاحقاً ──
-// MOCK_SOPS فارغ حالياً - تُضاف الـ SOPs عبر لوحة إدارة SOPs
-const MOCK_SOPS: SOP[] = [];
 // ── Timer Component ──
 function ReadingTimer({ seconds }: { seconds: number }) {
   const mins = Math.floor(seconds / 60);
@@ -773,7 +768,18 @@ export default function SOPsPage() {
       </div>
 
       {/* SOPs Grid */}
-      {availableSops.length === 0 ? (
+      {sopLoading ? (
+        <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center">
+          <Loader2 size={48} className="text-slate-300 mx-auto mb-4 animate-spin" />
+          <p className="text-slate-400 text-sm">جارٍ تحميل إجراءات SOP...</p>
+        </div>
+      ) : sopError ? (
+        <div className="bg-white border-2 border-dashed border-amber-200 rounded-3xl p-12 text-center">
+          <AlertTriangle size={48} className="text-amber-300 mx-auto mb-4" />
+          <h3 className="text-lg font-bold text-slate-600 mb-2">تعذّر تحميل إجراءات SOP</h3>
+          <p className="text-slate-400 text-sm">{sopError}</p>
+        </div>
+      ) : availableSops.length === 0 ? (
         <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
           <FileText size={48} className="text-slate-300 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-slate-600 mb-2">{t.noSops}</h3>

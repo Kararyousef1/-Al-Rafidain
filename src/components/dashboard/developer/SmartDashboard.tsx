@@ -184,7 +184,7 @@ export default function SmartDashboard({ onSwitchToClassic, realStats }: SmartDa
                 {[
                   { l: 'المستخدمون', v: s.totalUsers, c: 'text-cyan-500' },
                   { l: 'البلاغات', v: s.totalIncidents, c: 'text-amber-500' },
-                  { l: 'المشاكل', v: s.totalProblems, c: 'text-rose-500' },
+                  { l: 'البلاغات', v: s.totalProblems, c: 'text-rose-500' },
                   { l: 'الإشعارات', v: s.totalNotifications, c: 'text-emerald-500' },
                   { l: 'الاستبيانات', v: s.totalSurveys, c: 'text-violet-500' },
                   { l: 'SOPs', v: s.totalSOPs, c: 'text-blue-500' },

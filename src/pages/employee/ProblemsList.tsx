@@ -22,16 +22,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus, Search, TrendingUp, Clock,
   CheckCircle, XCircle,
-  FileText, Calendar, MessageSquare, Send,
+  FileText, Calendar, MessageSquare,
   ChevronRight, Loader2, AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import { supabase } from '../../lib/supabase';
-import { notifyRole } from '../../lib/notificationService';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
-import Modal from '../../components/ui/Modal';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
@@ -102,22 +100,6 @@ const CATEGORIES = [
 
 const SEVERITY_ORDER: Record<ProblemSeverity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
-interface NewProblemForm {
-  title: string;
-  description: string;
-  category: string;
-  severity: ProblemSeverity;
-  isAnonymous: boolean;
-}
-
-const EMPTY_FORM: NewProblemForm = {
-  title: '',
-  description: '',
-  category: 'technical',
-  severity: 'medium',
-  isAnonymous: false,
-};
-
 // ════════════════════════════════════════════════════════════════
 //  المكون
 // ════════════════════════════════════════════════════════════════
@@ -128,21 +110,17 @@ interface ProblemsListProps {
 
 export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListProps) {
   const { user } = useAuthStore();
-  const { setActiveView, addToast } = useUIStore();
+  const { setActiveView } = useUIStore();
 
   // ─── الحالة ───────────────────────────────────────────────────
   const [problems, setProblems] = useState<Problem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'all' | ProblemStatus>('all');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'severity'>('date');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
-
-  const [showNewProblem, setShowNewProblem] = useState(false);
-  const [newProblem, setNewProblem] = useState<NewProblemForm>(EMPTY_FORM);
 
   const isHR = useMemo(
     () => isHRProp || user?.role === 'hr' || user?.role === 'admin',
@@ -264,78 +242,8 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
   // المعالجات
   // ═══════════════════════════════════════════════════════════════
 
-  const handleSubmitProblem = async () => {
-    if (!newProblem.title.trim() || !newProblem.description.trim()) {
-      addToast('يرجى ملء جميع الحقول', 'error');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const { data, error } = await supabase
-        .from('incidents')
-        .insert({
-          title: newProblem.title,
-          description: newProblem.description,
-          category: newProblem.category,
-          severity: newProblem.severity,
-          status: 'pending',
-          is_anonymous: newProblem.isAnonymous,
-          reported_by: newProblem.isAnonymous ? null : user?.id,
-          user_id: newProblem.isAnonymous ? null : user?.id, // ✅ يوافق Migration 051
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-
-      const incidentId = data?.id;
-
-      // ✅ إشعار فريق HR (غير حجري)
-      if (incidentId) {
-        notifyRole(['hr', 'admin'], {
-          type: 'problem_created',
-          title: `بلاغ جديد: ${newProblem.title}`,
-          message: newProblem.isAnonymous
-            ? 'ورد بلاغ مجهول الهوية يحتاج للمراجعة'
-            : `${user?.full_name || 'موظف'}: ${newProblem.description.slice(0, 120)}`,
-          priority: newProblem.severity === 'critical' || newProblem.severity === 'high' ? 'high' : 'normal',
-          actionUrl: 'admin-problems',
-          groupKey: `incident-${incidentId}`,
-          metadata: {
-            problemId: incidentId,
-            category: newProblem.category,
-            severity: newProblem.severity,
-            isAnonymous: newProblem.isAnonymous,
-          },
-        }).catch((notifErr) => {
-          console.error('فشل إشعار HR:', notifErr);
-        });
-      }
-
-      addToast('تم رفع البلاغ بنجاح ✅', 'success');
-      setShowNewProblem(false);
-      setNewProblem(EMPTY_FORM);
-      fetchProblems(); // إعادة التحميل لعرض البلاغ الجديد
-    } catch (err) {
-      console.error('[ProblemsList] فشل رفع البلاغ:', err);
-      // ✅ إظهار الخطأ الحقيقي بدل النجاح الصامت المحلي
-      const message =
-        err instanceof Error && err.message ? err.message : 'حدث خطأ أثناء رفع البلاغ';
-      addToast(message, 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleSelectProblem = (id: string) => {
-    // ✅ إصلاح القوس الناقص في template literal
     setActiveView(`problem-detail-${id}`);
-  };
-
-  const resetForm = () => {
-    setShowNewProblem(false);
-    setNewProblem(EMPTY_FORM);
   };
 
   // ═══════════════════════════════════════════════════════════════
@@ -357,11 +265,11 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
           </p>
         </div>
         <Button
-          onClick={() => setShowNewProblem(true)}
+          onClick={() => setActiveView('new-problem')}
           className="bg-gradient-to-br from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800"
           icon={<Plus size={18} />}
         >
-          رفع بلاغ جديد
+          رفع بلاغ جديد (متطور)
         </Button>
       </div>
 
@@ -497,7 +405,7 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
               <p className="text-sm text-slate-500 mb-6">
                 {search ? 'جرب تغيير كلمة البحث' : 'ابدأ برفع بلاغ جديد'}
               </p>
-              <Button onClick={() => setShowNewProblem(true)} variant="outline" icon={<Plus size={18} />}>
+              <Button onClick={() => setActiveView('new-problem')} variant="outline" icon={<Plus size={18} />}>
                 رفع بلاغ جديد
               </Button>
             </div>
@@ -611,100 +519,6 @@ export default function ProblemsList({ isHR: isHRProp = false }: ProblemsListPro
         )}
       </div>
 
-      {/* New Problem Modal */}
-      <Modal isOpen={showNewProblem} onClose={resetForm} title="رفع بلاغ جديد">
-        <div className="space-y-4" dir="rtl">
-          {/* Title */}
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">
-              العنوان <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={newProblem.title}
-              onChange={(e) => setNewProblem({ ...newProblem, title: e.target.value })}
-              placeholder="عنوان واضح للبلاغ..."
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          {/* Category & Severity */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">التصنيف</label>
-              <select
-                value={newProblem.category}
-                onChange={(e) => setNewProblem({ ...newProblem, category: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                {CATEGORIES.map((cat) => (
-                  <option key={cat.value} value={cat.value}>
-                    {cat.icon} {cat.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">الأولوية</label>
-              <select
-                value={newProblem.severity}
-                onChange={(e) =>
-                  setNewProblem({ ...newProblem, severity: e.target.value as ProblemSeverity })
-                }
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="low">منخفضة</option>
-                <option value="medium">متوسطة</option>
-                <option value="high">عالية</option>
-                <option value="critical">حرجة</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">
-              الوصف <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={newProblem.description}
-              onChange={(e) => setNewProblem({ ...newProblem, description: e.target.value })}
-              placeholder="اشرح المشكلة بالتفصيل..."
-              rows={5}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-            />
-          </div>
-
-          {/* Anonymous */}
-          <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
-            <input
-              type="checkbox"
-              id="anonymous"
-              checked={newProblem.isAnonymous}
-              onChange={(e) => setNewProblem({ ...newProblem, isAnonymous: e.target.checked })}
-              className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-            />
-            <label htmlFor="anonymous" className="text-sm font-medium text-slate-700 cursor-pointer">
-              رفع البلاغ بشكل مجهول
-            </label>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t">
-            <Button variant="outline" onClick={resetForm} disabled={submitting}>
-              إلغاء
-            </Button>
-            <Button
-              onClick={handleSubmitProblem}
-              disabled={submitting || !newProblem.title.trim() || !newProblem.description.trim()}
-              icon={submitting ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-            >
-              {submitting ? 'جاري الإرسال...' : 'رفع البلاغ'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

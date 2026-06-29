@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Clock, Calendar, CheckCircle, XCircle, Loader,
+  Clock, Loader,
   Sun, Moon, Sunrise, ChevronRight, ChevronLeft,
   AlertTriangle,
 } from 'lucide-react';
@@ -27,7 +27,7 @@ import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
 import {
   determineShift, calculateLateMinutes,
   calculateTotalHours,
-  AttendanceSummary as AttendanceSummaryType, ShiftType,
+  ShiftType,
 } from '../../utils/shiftUtils';
 import { getErrorMessage } from '../../lib/errors';
 

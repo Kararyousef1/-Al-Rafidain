@@ -1,26 +1,17 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
-  BookOpen, PlayCircle, CheckCircle, Clock, Award, Star,
+  BookOpen, CheckCircle, Clock, Star,
   Search, Filter, X, Microscope, FlaskConical,
-  Shield, FileText, Cpu, Truck, Users, Zap, TrendingUp,
-  Lock, AlertTriangle, Beaker, BarChart3, Settings,
-  GraduationCap, Trophy, Target, Flame, Layers,
-  ChevronRight, ChevronLeft, Play, Pause, RotateCcw,
-  CheckSquare, Circle, Volume2, VolumeX, Maximize2,
-  BookMarked, List, MessageSquare, HelpCircle, Send,
-  ThumbsUp, Download, Share2, Eye, Timer, Brain,
-  Lightbulb, ArrowRight, ArrowLeft, BarChart2, PieChart,
-  Minimize2, Home, SkipForward
+  Shield, FileText, Cpu, Truck, Users, TrendingUp,
+  Lock, AlertTriangle, Settings,
+  GraduationCap, Target, Flame, Layers,
 } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
+import Card from '../../components/ui/Card';
 import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
 
 // ── Types ──
 type CourseStatus = 'completed' | 'in_progress' | 'not_started' | 'locked';
 type CourseLevel  = 'مبتدئ' | 'متوسط' | 'متقدم' | 'خبير';
-type ViewMode = 'catalog' | 'course' | 'quiz' | 'certificate' | 'approval';
 type Language = 'ar' | 'en';
 
 interface QuizQuestion {
@@ -64,34 +55,6 @@ interface Course {
   thumbnail?: string;
 }
 
-// ── Translations ──
-const translations = {
-  ar: {
-    approvalTitle: 'إعلان اعتماد الدورة',
-    approvalMessage: 'عزيزي الموظف،',
-    approvalText1: 'من خلال الموافقة على أساسيات هذه الدورة، تؤكد أنك قد راجعت وفهمت المحتوى بالكامل.',
-    approvalText2: 'بعد الموافقة، سيتم إصدار إشعار إداري.',
-    approvalCheckbox: 'لقد قرأت وفهمت وأوافقت على الإعلان أعلاه بخصوص هذه الدورة',
-    approvalButton: 'اعتماد وإتمام الدورة',
-    cancelButton: 'إلغاء',
-    courseCompleted: 'تم إتمام الدورة بنجاح!',
-    certificateReady: 'شهادتك جاهزة للتحميل',
-    adminNotified: 'تم إشعار الإدارة باعتمادك للدورة',
-  },
-  en: {
-    approvalTitle: 'Course Approval Declaration',
-    approvalMessage: 'Dear Employee,',
-    approvalText1: 'By approving this course, you confirm that you have reviewed and fully understood the content.',
-    approvalText2: 'After approval, an administrative notification will be issued.',
-    approvalCheckbox: 'I have read, understood, and agree to the above declaration regarding this course',
-    approvalButton: 'Approve & Complete Course',
-    cancelButton: 'Cancel',
-    courseCompleted: 'Course completed successfully!',
-    certificateReady: 'Your certificate is ready for download',
-    adminNotified: 'Administration has been notified of your course approval',
-  }
-};
-
 // ── Categories ──
 const CATEGORIES = [
   { id: 'all',          label: 'الكل',               icon: Layers,       color: 'from-slate-500 to-slate-700' },
@@ -109,27 +72,11 @@ const CATEGORIES = [
   { id: 'advanced',     label: 'متقدم وتقنية',        icon: Cpu,          color: 'from-fuchsia-500 to-fuchsia-700' },
 ];
 
-// ── ALL_COURSES فارغ - تُضاف الدورات عبر لوحة إدارة التدريب ──
-const ALL_COURSES: Course[] = [];
-
-// ── Level colors ──
-const LEVEL_STYLE: Record<CourseLevel, string> = {
-  'مبتدئ':  'bg-emerald-100 text-emerald-700',
-  'متوسط':  'bg-sky-100 text-sky-700',
-  'متقدم':  'bg-violet-100 text-violet-700',
-  'خبير':   'bg-rose-100 text-rose-700',
-};
 
 // ── Main Component ──
 export default function TrainingPage() {
-  const { addToast } = useUIStore();
-  const { user } = useAuthStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('catalog');
-  const [activeCourse, setActiveCourse] = useState<Course | null>(null);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [certCourse, setCertCourse] = useState<Course | null>(null);
-  const [approvalCourse, setApprovalCourse] = useState<Course | null>(null);
   const [levelFilter, setLevelFilter] = useState<CourseLevel | 'all'>('all');
   const [lang, setLang] = useState<Language>('ar');
 
@@ -154,9 +101,10 @@ export default function TrainingPage() {
         }
 
         setCourses(data || []);
-      } catch (err: any) {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'فشل تحميل الدورات التدريبية';
         console.error('Error fetching courses:', err);
-        setCoursesError(err.message || 'فشل تحميل الدورات التدريبية');
+        setCoursesError(message);
         setCourses([]);
       } finally {
         setCoursesLoading(false);
@@ -168,7 +116,6 @@ export default function TrainingPage() {
 
   const totalCourses    = courses.length;
   const completedCount  = courses.filter(c => c.status === 'completed').length;
-  const inProgressCount = courses.filter(c => c.status === 'in_progress').length;
   const totalPoints     = courses.filter(c => c.status === 'completed').reduce((a, c) => a + c.points, 0);
   const mandatoryTotal  = courses.filter(c => c.mandatory).length;
   const mandatoryDone   = courses.filter(c => c.mandatory && c.status === 'completed').length;
@@ -311,17 +258,37 @@ export default function TrainingPage() {
         </div>
       </Card>
 
+      {/* ── Loading State ── */}
+      {coursesLoading && (
+        <div className="text-center py-20">
+          <div className="inline-block w-8 h-8 border-3 border-slate-200 border-t-indigo-500 rounded-full animate-spin mb-3" />
+          <p className="text-slate-400 text-sm">جارٍ تحميل الدورات التدريبية...</p>
+        </div>
+      )}
+
+      {/* ── Error State ── */}
+      {!coursesLoading && coursesError && (
+        <div className="text-center py-20">
+          <AlertTriangle size={60} className="mx-auto text-amber-300 mb-4" />
+          <h3 className="text-xl font-bold text-slate-600 mb-2">تعذّر تحميل الدورات</h3>
+          <p className="text-slate-400 text-sm">{coursesError}</p>
+        </div>
+      )}
+
       {/* ── Empty State ── */}
-      {ALL_COURSES.length === 0 ? (
+      {!coursesLoading && !coursesError && courses.length === 0 && (
         <div className="text-center py-20">
           <BookOpen size={60} className="mx-auto text-slate-200 mb-4" />
           <h3 className="text-xl font-bold text-slate-600 mb-2">لا توجد دورات تدريبية بعد</h3>
           <p className="text-slate-400 text-sm">ستظهر الدورات هنا عند إضافتها من قبل إدارة التدريب</p>
         </div>
-      ) : (
+      )}
+
+      {/* ── Courses (In Progress + Grid) ── */}
+      {!coursesLoading && !coursesError && courses.length > 0 && (
         <>
           {/* ── In Progress ── */}
-          {ALL_COURSES.filter(c => c.status === 'in_progress').length > 0 && (
+          {courses.filter(c => c.status === 'in_progress').length > 0 && (
             <div>
               <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <Flame size={16} className="text-orange-500" />
@@ -331,7 +298,6 @@ export default function TrainingPage() {
                 {courses.filter(c => c.status === 'in_progress').map(course => (
                   <div
                     key={course.id}
-                    onClick={() => { setActiveCourse(course); setViewMode('course'); }}
                     className="bg-white border border-slate-100 rounded-2xl p-4 hover:shadow-xl transition-all cursor-pointer hover:border-indigo-300"
                   >
                     {course.thumbnail && (
@@ -368,7 +334,6 @@ export default function TrainingPage() {
               {filteredCourses.map(course => (
                 <div
                   key={course.id}
-                  onClick={() => { setActiveCourse(course); setViewMode('course'); }}
                   className="bg-white border border-slate-100 rounded-2xl p-4 hover:shadow-xl transition-all cursor-pointer hover:border-indigo-300 group"
                 >
                   {course.thumbnail && (

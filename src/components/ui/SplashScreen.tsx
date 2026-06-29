@@ -1,18 +1,91 @@
 /**
  * ════════════════════════════════════════════════════════════════
  *  SplashScreen - شاشة التحميل الرئيسية (KOFRX Style)
+ *  ✓ متجاوبة مع جميع أحجام الشاشات (موبايل، تابلت، ديسكتوب)
  * ════════════════════════════════════════════════════════════════
  */
 
+// ─── ثوابت مشتركة ───────────────────────────────────────────────
+const C = {
+  cyan: '#00d4ff',
+  blue: '#0066ff',
+  dark: '#0a0e27',
+  darkAlt: '#1a1f3a',
+  arabicFont: "'Tajawal', 'Cairo', sans-serif",
+  logoFont: "'Orbitron', sans-serif",
+} as const;
+
+const LOGO_GRADIENT = `linear-gradient(135deg, #ffffff 0%, ${C.cyan} 50%, ${C.blue} 100%)`;
+
+// ─── CSS Animations (مشتركة بين mini والكاملة) ───────────────────
+const SHARED_CSS = `
+  @keyframes dotBounce {
+    0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
+    50% { transform: translateY(-15px) scale(1.2); opacity: 1; }
+  }
+  @keyframes miniDotBounce {
+    0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
+    50% { transform: translateY(-8px) scale(1.2); opacity: 1; }
+  }
+`;
+
+const FULL_CSS = `
+  ${SHARED_CSS}
+  @keyframes bgPulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+  }
+  @keyframes textGlow {
+    0%, 100% { filter: brightness(1) drop-shadow(0 0 20px rgba(0,212,255,0.6)); }
+    50% { filter: brightness(1.3) drop-shadow(0 0 40px rgba(0,212,255,0.9)); }
+  }
+  @keyframes lineExpand {
+    0%, 100% { width: 100%; opacity: 0.6; }
+    50% { width: 150%; opacity: 1; }
+  }
+
+  /* Responsive breakpoints */
+  @media (max-width: 1024px) { .splash-grid { background-size: 40px 40px !important; } }
+  @media (max-width: 768px)  { .splash-grid { background-size: 30px 30px !important; }
+                               .splash-line-container { max-width: 200px !important; } }
+  @media (max-width: 480px)  { .splash-grid { background-size: 20px 20px !important; }
+                               .splash-line-container { max-width: 150px !important; } }
+  @media (max-width: 360px)  { .splash-line-container { max-width: 120px !important; } }
+  @media (max-height: 500px) { .splash-dots { margin-top: 16px !important; }
+                               .splash-logo { margin-bottom: 12px !important; } }
+`;
+
+// ─── الأنماط المشتركة للنقاط ──────────────────────────────────────
+const dotBaseStyle = (size: string, delay: string, animName: string): React.CSSProperties => ({
+  width: size,
+  height: size,
+  borderRadius: '50%',
+  background: C.cyan,
+  boxShadow: `0 0 10px ${C.cyan}`,
+  animation: `${animName} 1.4s ease-in-out infinite`,
+  animationDelay: delay,
+});
+
+// ─── نمط الشعار المشترك ───────────────────────────────────────────
+const logoGradientStyle: React.CSSProperties = {
+  fontFamily: C.logoFont,
+  fontWeight: 900,
+  background: LOGO_GRADIENT,
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+};
+
+// ─── Types ────────────────────────────────────────────────────────
 type SplashScreenProps = {
   timedOut?: boolean;
   mini?: boolean;
   message?: string;
 };
 
-const SPIN_CSS = `@keyframes spin{to{transform:rotate(360deg)}}@keyframes prog{from{width:15%}to{width:85%}}`;
-
+// ─── Component ───────────────────────────────────────────────────
 export default function SplashScreen({ timedOut, mini, message }: SplashScreenProps) {
+
   // ✅ نسخة مصغّرة للـ PageLoader (داخل الصفحات)
   if (mini) {
     return (
@@ -22,41 +95,24 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
           alignItems: 'center',
           justifyContent: 'center',
           minHeight: '60vh',
-          gap: '16px',
+          gap: 'clamp(12px, 3vw, 16px)',
+          padding: '0 16px',
         }}
       >
-        <style>{SPIN_CSS}</style>
+        <style>{SHARED_CSS}</style>
+
         <div
           style={{
-            fontFamily: "'Orbitron', sans-serif",
-            fontSize: '2rem',
-            fontWeight: 900,
+            ...logoGradientStyle,
+            fontSize: 'clamp(1.5rem, 5vw, 2rem)',
             letterSpacing: '0.1em',
-            background: 'linear-gradient(135deg, #ffffff 0%, #00d4ff 50%, #0066ff 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            filter: 'drop-shadow(0 0 15px rgba(0,212,255,0.4))',
+            filter: `drop-shadow(0 0 15px rgba(0,212,255,0.4))`,
           }}
         >
           KOFRX
         </div>
-        <div
-          style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            background: '#00d4ff',
-            boxShadow: '0 0 8px #00d4ff',
-            animation: 'dotBounce 1.4s ease-in-out infinite',
-          }}
-        />
-        <style>{`
-          @keyframes dotBounce {
-            0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
-            50% { transform: translateY(-10px) scale(1.2); opacity: 1; }
-          }
-        `}</style>
+
+        <div style={dotBaseStyle('clamp(5px, 1.5vw, 6px)', '0s', 'miniDotBounce')} />
       </div>
     );
   }
@@ -66,61 +122,31 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
     <div
       style={{
         width: '100%',
-        height: '100vh',
+        height: '100dvh',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%)',
+        background: `linear-gradient(135deg, ${C.dark} 0%, ${C.darkAlt} 100%)`,
         position: 'relative',
-        fontFamily: "'Orbitron', sans-serif",
+        fontFamily: C.logoFont,
       }}
     >
-      <style>{`
-        /* خلفية متحركة */
-        @keyframes bgPulse {
-          0%, 100% { opacity: 0.5; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.05); }
-        }
-
-        @keyframes textGlow {
-          0%, 100% {
-            filter: brightness(1) drop-shadow(0 0 20px rgba(0,212,255,0.6));
-          }
-          50% {
-            filter: brightness(1.3) drop-shadow(0 0 40px rgba(0,212,255,0.9));
-          }
-        }
-
-        @keyframes lineExpand {
-          0%, 100% { width: 200px; opacity: 0.6; }
-          50% { width: 350px; opacity: 1; }
-        }
-
-        @keyframes dotBounce {
-          0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
-          50% { transform: translateY(-15px) scale(1.2); opacity: 1; }
-        }
-
-        @keyframes prog {
-          from { width: 15%; }
-          to { width: 85%; }
-        }
-      `}</style>
+      <style>{FULL_CSS}</style>
 
       {/* خلفية متحركة - حلقة ضوئية */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          background:
-            'radial-gradient(circle at 50% 50%, rgba(15,111,255,0.1) 0%, transparent 50%)',
+          background: `radial-gradient(circle at 50% 50%, rgba(15,111,255,0.1) 0%, transparent 50%)`,
           animation: 'bgPulse 4s ease-in-out infinite',
         }}
       />
 
       {/* شبكة خفيفة */}
       <div
+        className="splash-grid"
         style={{
           position: 'absolute',
           inset: 0,
@@ -132,21 +158,28 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
       />
 
       {/* الحاوية الرئيسية */}
-      <div style={{ position: 'relative', zIndex: 10, textAlign: 'center' }}>
-        {/* كلمة KOFRX */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          textAlign: 'center',
+          padding: '0 20px',
+          width: '100%',
+          maxWidth: '600px',
+          margin: '0 auto',
+        }}
+      >
+        {/* شعار KOFRX */}
         <div
+          className="splash-logo"
           style={{
-            fontSize: mini ? '2rem' : '5rem',
-            fontWeight: 900,
-            letterSpacing: '0.15em',
-            background: 'linear-gradient(135deg, #ffffff 0%, #00d4ff 50%, #0066ff 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
+            ...logoGradientStyle,
+            fontSize: 'clamp(2rem, 8vw, 5rem)',
+            letterSpacing: 'clamp(0.08em, 0.15em, 0.2em)',
             animation: 'textGlow 3s ease-in-out infinite',
-            textShadow:
-              '0 0 40px rgba(0,212,255,0.5), 0 0 80px rgba(0,102,255,0.3)',
-            marginBottom: '30px',
+            textShadow: `0 0 40px rgba(0,212,255,0.5), 0 0 80px rgba(0,102,255,0.3)`,
+            marginBottom: 'clamp(16px, 4vw, 30px)',
+            whiteSpace: 'nowrap',
           }}
         >
           KOFRX
@@ -154,57 +187,39 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
 
         {/* خط مضيء */}
         <div
+          className="splash-line-container"
           style={{
-            height: '2px',
+            maxWidth: 'clamp(120px, 40vw, 250px)',
             margin: '0 auto',
-            background: 'linear-gradient(90deg, transparent 0%, #0066ff 50%, transparent 100%)',
-            boxShadow: '0 0 10px #0066ff, 0 0 20px rgba(0,102,255,0.5)',
-            animation: 'lineExpand 2s ease-in-out infinite',
-          }}
-        />
-
-        {/* نقاط التحميل */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'center',
-            marginTop: '40px',
+            overflow: 'hidden',
           }}
         >
           <div
             style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: '#00d4ff',
-              boxShadow: '0 0 10px #00d4ff',
-              animation: 'dotBounce 1.4s ease-in-out infinite',
-              animationDelay: '0s',
+              height: '2px',
+              background: `linear-gradient(90deg, transparent 0%, ${C.blue} 50%, transparent 100%)`,
+              boxShadow: `0 0 10px ${C.blue}, 0 0 20px rgba(0,102,255,0.5)`,
+              animation: 'lineExpand 2s ease-in-out infinite',
             }}
           />
-          <div
-            style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: '#00d4ff',
-              boxShadow: '0 0 10px #00d4ff',
-              animation: 'dotBounce 1.4s ease-in-out infinite',
-              animationDelay: '0.2s',
-            }}
-          />
-          <div
-            style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: '#00d4ff',
-              boxShadow: '0 0 10px #00d4ff',
-              animation: 'dotBounce 1.4s ease-in-out infinite',
-              animationDelay: '0.4s',
-            }}
-          />
+        </div>
+
+        {/* نقاط التحميل */}
+        <div
+          className="splash-dots"
+          style={{
+            display: 'flex',
+            gap: 'clamp(8px, 2.5vw, 14px)',
+            justifyContent: 'center',
+            marginTop: 'clamp(24px, 5vw, 40px)',
+          }}
+        >
+          {(['0s', '0.2s', '0.4s'] as const).map((delay) => (
+            <div
+              key={delay}
+              style={dotBaseStyle('clamp(6px, 1.8vw, 10px)', delay, 'dotBounce')}
+            />
+          ))}
         </div>
 
         {/* رسالة إضافية */}
@@ -212,9 +227,12 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
           <p
             style={{
               color: timedOut ? '#f87171' : '#94a3b8',
-              fontSize: '0.9rem',
-              marginTop: '24px',
-              fontFamily: "'Tajawal', 'Cairo', sans-serif",
+              fontSize: 'clamp(0.75rem, 2.5vw, 0.95rem)',
+              marginTop: 'clamp(16px, 3vw, 24px)',
+              fontFamily: C.arabicFont,
+              padding: '0 16px',
+              wordBreak: 'break-word',
+              lineHeight: 1.5,
             }}
           >
             {timedOut
@@ -228,31 +246,22 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
             onClick={() => window.location.reload()}
             style={{
               marginTop: '16px',
-              padding: '8px 20px',
-              background: 'linear-gradient(135deg, #0066ff, #00d4ff)',
+              padding: 'clamp(6px, 2vw, 10px) clamp(16px, 4vw, 24px)',
+              background: `linear-gradient(135deg, ${C.blue}, ${C.cyan})`,
               color: '#fff',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontFamily: "'Tajawal', 'Cairo', sans-serif",
+              fontSize: 'clamp(0.75rem, 2vw, 0.9rem)',
+              fontFamily: C.arabicFont,
               fontWeight: 600,
+              whiteSpace: 'nowrap',
             }}
           >
             إعادة المحاولة
           </button>
         )}
       </div>
-
-      {/* Responsive via media query */}
-      <style>{`
-        @media (max-width: 768px) {
-          .splash-logo { font-size: 3rem !important; }
-        }
-        @media (max-width: 480px) {
-          .splash-logo { font-size: 2.5rem !important; }
-        }
-      `}</style>
     </div>
   );
 }
