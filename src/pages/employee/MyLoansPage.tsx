@@ -3,12 +3,12 @@
  */
 import { useState, useEffect } from 'react';
 import { CreditCard, Loader2, Eye } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useAuthStore } from '../../core/stores';
+import { employeeService, employeeLoanService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { EmployeeLoan } from '../../types/payroll';
+import type { EmployeeLoan } from '../../shared/types/payroll';
 import { LOAN_STATUS_LABELS, LOAN_STATUS_COLORS, formatCurrency } from '../../utils/payrollUtils';
 import { Modal, DetailRow } from '../hr/LoansPage';
 
@@ -22,8 +22,8 @@ export default function MyLoansPage() {
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
-      const { data } = await supabase.from('employees').select('id').eq('user_id', user.id).single();
-      if (data) setEmployeeId(data.id);
+      const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+      if (employees.length > 0) setEmployeeId(employees[0].id);
     })();
   }, [user]);
 
@@ -32,12 +32,7 @@ export default function MyLoansPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('employee_loans')
-          .select('*')
-          .eq('employee_id', employeeId)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
+        const data = await employeeLoanService.findByEmployee(employeeId);
         setLoans((data || []) as EmployeeLoan[]);
       } catch (err) {
         console.error(getErrorMessage(err));

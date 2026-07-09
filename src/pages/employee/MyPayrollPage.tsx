@@ -7,12 +7,12 @@
 
 import { useState, useEffect } from 'react';
 import { DollarSign, FileText, Loader2, Eye, X, TrendingUp, TrendingDown } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useAuthStore } from '../../core/stores';
+import { employeeService, payrollService, payrollPeriodService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { PayrollRecord } from '../../types/payroll';
+import type { PayrollRecord } from '../../shared/types/payroll';
 import { PAYROLL_STATUS_LABELS, PAYROLL_STATUS_COLORS, formatCurrency } from '../../utils/payrollUtils';
 
 export default function MyPayrollPage() {
@@ -25,8 +25,8 @@ export default function MyPayrollPage() {
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
-      const { data } = await supabase.from('employees').select('id').eq('user_id', user.id).single();
-      if (data) setEmployeeId(data.id);
+      const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+      if (employees.length > 0) setEmployeeId(employees[0].id);
     })();
   }, [user]);
 
@@ -35,13 +35,12 @@ export default function MyPayrollPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('payroll_records')
-          .select(`*, payroll_periods(name, start_date, end_date, payment_date)`)
-          .eq('employee_id', employeeId)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        setRecords((data || []) as unknown as PayrollRecord[]);
+        const data = await payrollService.findPayrollByEmployee(employeeId);
+        // جلب أسماء الفترات عبر SDK
+        const periods = await payrollPeriodService.findAllPeriods();
+        const periodMap = new Map((periods || []).map((p: any) => [p.id, p]));
+        const enriched = (data || []).map((r: any) => ({ ...r, payroll_periods: periodMap.get(r.period_id) || null }));
+        setRecords(enriched as unknown as PayrollRecord[]);
       } catch (err) {
         console.error(getErrorMessage(err));
       } finally {

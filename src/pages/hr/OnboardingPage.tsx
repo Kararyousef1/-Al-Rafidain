@@ -3,9 +3,9 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { UserPlus, UserMinus, Loader2, CheckCircle, ListChecks } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { onboardingTaskService, employeeOnboardingService, offboardingRecordService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { Modal, EmployeePicker, FormField, ModalActions } from './LoansPage';
@@ -29,25 +29,25 @@ export default function OnboardingPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: t } = await supabase.from('onboarding_tasks').select('*').eq('is_active', true).order('sort_order');
+      const t = await onboardingTaskService.findActiveTasks();
       setTasks(t || []);
 
-      const { data: emp } = await supabase.from('employee_onboarding')
-        .select(`*, employees!inner(full_name_ar)`)
-        .order('created_at', { ascending: false });
+      const emp = await employeeOnboardingService.findAll({ orderBy: 'created_at', ascending: false });
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (emp || []).map((e: any) => ({ ...e, employees: empMap.get(e.employee_id) || null }));
 
       // تجميع حسب الموظف
       const grouped: Record<string, any[]> = {};
-      (emp || []).forEach((e: any) => {
+      (enriched || []).forEach((e: any) => {
         if (!grouped[e.employee_id]) grouped[e.employee_id] = [];
         grouped[e.employee_id].push(e);
       });
       setEmployeeProgress(grouped);
 
-      const { data: off } = await supabase.from('offboarding_records')
-        .select(`*, employees!inner(full_name_ar, employee_code)`)
-        .order('created_at', { ascending: false });
-      setOffboardingRecords(off || []);
+      const off = await offboardingRecordService.findAll({ orderBy: 'created_at', ascending: false });
+      const offEnriched = (off || []).map((o: any) => ({ ...o, employees: empMap.get(o.employee_id) || null }));
+      setOffboardingRecords(offEnriched);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -69,8 +69,7 @@ export default function OnboardingPage() {
         task_id: t.id,
         status: 'pending',
       }));
-      const { error } = await supabase.from('employee_onboarding').upsert(records, { onConflict: 'employee_id,task_id', ignoreDuplicates: true });
-      if (error) throw error;
+      await employeeOnboardingService.upsert(records);
       addToast('بدأ تعريف الموظف', 'success');
       setShowStartOnboard(false);
       setOnboardForm({ employee_id: '' });
@@ -83,10 +82,7 @@ export default function OnboardingPage() {
   const handleToggleTask = async (recordId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
     try {
-      const { error } = await supabase.from('employee_onboarding')
-        .update({ status: newStatus, completed_at: newStatus === 'completed' ? new Date().toISOString() : null })
-        .eq('id', recordId);
-      if (error) throw error;
+      await employeeOnboardingService.updateStatus(recordId, newStatus);
       await fetchData();
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
@@ -99,18 +95,16 @@ export default function OnboardingPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('offboarding_records').insert({
+      await offboardingRecordService.createRecord({
         employee_id: offboardForm.employee_id,
         last_working_day: offboardForm.last_working_day,
         reason: offboardForm.reason,
         exit_type: offboardForm.exit_type,
         exit_interview_notes: offboardForm.notes,
-      });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
 
       // تعطيل الموظف
-      await supabase.from('employees').update({ is_active: false, employment_status: 'terminated' })
-        .eq('id', offboardForm.employee_id);
+      await employeeService.update(offboardForm.employee_id, { is_active: false, employment_status: 'terminated' } as unknown as Record<string, unknown>);
 
       addToast('تم تسجيل إنهاء الخدمة', 'success');
       setShowOffboard(false);

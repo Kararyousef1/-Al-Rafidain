@@ -31,10 +31,11 @@ import {
   LandingNavLink,
   LandingVideo,
   LandingConfig,
-} from '../../store';
-import { supabase } from '../../sdk/supabase';
+} from '../../core/stores';
+import { supabase } from '../../services/supabase/supabase';
+import { settingsService } from '../../services/sdk';
 import LandingPage from '../public/LandingPage';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════════════════
 //  أنواع موسّعة محلياً (تحلّ محل any جذرياً)
@@ -504,9 +505,9 @@ export default function AdminLandingPageCMS() {
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const { data, error } = await supabase.from('system_settings').select('landing_config').eq('id', 'singleton').single();
-        if (!error && data?.landing_config) {
-          const merged: CMSConfig = { ...DEFAULT_CONFIG, ...landingConfig, ...(data.landing_config as Partial<CMSConfig>) };
+        const landingConfigData = await settingsService.findLandingConfig();
+        if (landingConfigData) {
+          const merged: CMSConfig = { ...DEFAULT_CONFIG, ...landingConfig, ...(landingConfigData as Partial<CMSConfig>) };
           setConfig(merged);
           updateLandingConfig(merged as Partial<LandingConfig>);
         }
@@ -537,8 +538,7 @@ export default function AdminLandingPageCMS() {
     setSaving(true);
     try {
       updateLandingConfig(config as Partial<LandingConfig>);
-      const { error } = await supabase.from('system_settings').upsert({ id: 'singleton', landing_config: config, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-      if (error) throw error;
+      await settingsService.updateLandingConfig(config as unknown as Record<string, unknown>);
       setSavedAt(new Date().toLocaleTimeString('ar-SA'));
       setHasChanges(false);
       showToast('تم الحفظ بنجاح ✓', 'success');

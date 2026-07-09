@@ -3,13 +3,13 @@
  */
 import { useState, useEffect } from 'react';
 import { Receipt, Plus, Loader2 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useAuthStore } from '../../core/stores';
+import { employeeService, expenseRequestService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { ExpenseRequest } from '../../types/hrModules';
-import { EXPENSE_STATUS_LABELS } from '../../types/hrModules';
+import type { ExpenseRequest } from '../../shared/types/hrModules';
+import { EXPENSE_STATUS_LABELS } from '../../shared/types/hrModules';
 import { formatCurrency } from '../../utils/payrollUtils';
 import { Modal, FormField, ModalActions } from '../hr/LoansPage';
 
@@ -28,8 +28,8 @@ export default function MyExpensesPage() {
   useEffect(() => {
     (async () => {
       if (!user?.id) return;
-      const { data } = await supabase.from('employees').select('id').eq('user_id', user.id).single();
-      if (data) setEmployeeId(data.id);
+      const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+      if (employees.length > 0) setEmployeeId(employees[0].id);
     })();
   }, [user]);
 
@@ -38,9 +38,7 @@ export default function MyExpensesPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase.from('expense_requests')
-          .select('*').eq('employee_id', employeeId).order('created_at', { ascending: false });
-        if (error) throw error;
+        const data = await expenseRequestService.findByEmployee(employeeId);
         setExpenses((data || []) as ExpenseRequest[]);
       } catch (err) {
         console.error(getErrorMessage(err));
@@ -56,22 +54,19 @@ export default function MyExpensesPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('expense_requests').insert({
+      await expenseRequestService.createRequest({
         employee_id: employeeId,
         title: form.title,
         description: form.description,
         amount: Number(form.amount),
         category: form.category,
         expense_date: form.expense_date,
-        status: 'pending',
-      });
-      if (error) throw error;
+      } as any);
       if (addToast) addToast({ type: 'success', message: 'تم إرسال طلب النفقة' });
       setShowCreate(false);
       setForm({ title: '', description: '', amount: 0, category: 'general', expense_date: format(new Date(), 'yyyy-MM-dd') });
       // إعادة الجلب
-      const { data } = await supabase.from('expense_requests')
-        .select('*').eq('employee_id', employeeId).order('created_at', { ascending: false });
+      const data = await expenseRequestService.findByEmployee(employeeId);
       setExpenses((data || []) as ExpenseRequest[]);
     } catch (err) {
       if (addToast) addToast({ type: 'error', message: getErrorMessage(err) });

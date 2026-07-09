@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Search, Mail, Phone, Star, Loader, ServerCrash } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
+import { employeeService } from '../../services/sdk/EmployeeService';
+import { departmentService } from '../../services/sdk/DepartmentService';
+import { incidentService } from '../../services/sdk/IncidentService';
+import { wellnessEntryService } from '../../services/sdk/WellnessService';
+import { certificationService } from '../../services/sdk/CertificationService';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
 
 interface EmployeeProfile {
   id: string;
@@ -44,16 +48,13 @@ export default function TeamPage() {
       setError(null);
       
       try {
-        const resProfiles = await supabase.from('employees').select('id, full_name_ar, department_id, is_active, position, phone, email, role');
-        if (resProfiles.error) throw resProfiles.error;
+        const empsData = await employeeService.findAll();
+        const deptsData = await departmentService.findAll();
+        const deptMap = new Map((deptsData || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
         
-        // جلب أسماء الأقسام
-        const { data: depts } = await supabase.from('departments').select('id, name_ar');
-        const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
-        
-        const profilesData = (resProfiles.data || []).map((e: any) => ({
+        const profilesData = (empsData || []).map((e: any) => ({
           ...e,
-          full_name: e.full_name_ar || '',
+          full_name: e.full_name_ar || e.full_name || '',
           department: deptMap.get(e.department_id || '') || '',
           status: e.is_active ? 'active' : 'inactive',
         }));
@@ -64,13 +65,9 @@ export default function TeamPage() {
           return;
         }
 
-        const resIncidents = await supabase.from('incidents').select('reported_by, status');
-        const resWellness = await supabase.from('wellness_entries').select('employee_id, score');
-        const resCerts = await supabase.from('employee_certifications').select('employee_id');
-
-        const incidentsData = resIncidents.data || [];
-        const wellnessData = resWellness.data || [];
-        const certsData = resCerts.data || [];
+        const incidentsData = await incidentService.findAll() || [];
+        const wellnessData = await wellnessEntryService.findAllEntries() || [];
+        const certsData = await certificationService.findAllCertifications() || [];
 
         const mappedData = (profilesData || []).map(profile => {
           const empIncidents = incidentsData.filter(i => i.reported_by === profile.id && i.status !== 'closed' && i.status !== 'resolved');

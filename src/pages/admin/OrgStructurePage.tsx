@@ -20,11 +20,12 @@ import {
   Shield, Plus, GitMerge, User, Building, Trash2,
   CheckCircle, ShieldAlert, Briefcase, AlertTriangle, Loader2,
 } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Input from '../../shared/components/ui/Input';
+import { supabase } from '../../services/supabase/supabase';
+import { specialtyService } from '../../services/sdk';
+import { useUIStore } from '../../core/stores';
 
 // ════════════════════════════════════════════════════════════════
 //  Types
@@ -112,13 +113,7 @@ export default function OrgStructurePage() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: err } = await supabase
-        .from('specialties')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (err) throw err;
-
+      const data = await specialtyService.findAllSpecialties();
       setSpecialties(data || []);
     } catch (err) {
       console.error('[OrgStructurePage] فشل تحميل الاختصاصات:', err);
@@ -141,19 +136,13 @@ export default function OrgStructurePage() {
 
     try {
       setLoading(true);
-      const { data, error: err } = await supabase
-        .from('specialties')
-        .insert({
-          name: newSpecialty.trim(),
-          department: selectedDept,
-          role_level: selectedRole,
-        })
-        .select()
-        .single();
+      const result = await specialtyService.createSpecialty({
+        name: newSpecialty.trim(),
+        department: selectedDept,
+        role_level: selectedRole,
+      });
 
-      if (err) throw err;
-
-      setSpecialties((prev) => [...prev, data]);
+      setSpecialties((prev) => [...prev, result]);
       setNewSpecialty('');
       addToast('تمت إضافة الاختصاص بنجاح! أصبح متاحاً في شاشة الموظفين.', 'success');
     } catch (err) {
@@ -168,8 +157,7 @@ export default function OrgStructurePage() {
   // ─── حذف اختصاص ──────────────────────────────────────────────
   const handleDeleteSpecialty = async (id: string) => {
     try {
-      const { error: err } = await supabase.from('specialties').delete().eq('id', id);
-      if (err) throw err;
+      await specialtyService.deleteSpecialty(id);
       setSpecialties((prev) => prev.filter((s) => s.id !== id));
       addToast('تم حذف الاختصاص', 'success');
     } catch (err) {

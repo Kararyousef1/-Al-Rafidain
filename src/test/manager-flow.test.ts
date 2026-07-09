@@ -28,20 +28,20 @@ import {
   linkLeaveApproval,
   linkLeaveRejection,
   linkPermissionApproval,
-} from '../lib/leaveAttendanceLink';
+} from '../services/integrations/leaveAttendanceLink';
 import {
   notifyAbsentEmployee,
   notifyLateEmployee,
   checkAndNotifyRepeatedLate,
   sendWeeklyReportToManager,
-} from '../lib/attendanceNotificationService';
+} from '../services/notifications/attendanceNotificationService';
 
 // ════════════════════════════════════════════════════════════════
 // تهيئة mock
 // ════════════════════════════════════════════════════════════════
 
 // Mock supabase
-vi.mock('../lib/supabase', () => ({
+vi.mock('../../services/supabase/supabase', () => ({
   supabase: {
     from: vi.fn(() => ({
       select: vi.fn().mockReturnThis(),
@@ -66,7 +66,7 @@ vi.mock('../lib/supabase', () => ({
 }));
 
 // Mock notificationService
-vi.mock('../lib/notificationService', () => ({
+vi.mock('../services/notifications/notificationService', () => ({
   notifyManager: vi.fn().mockResolvedValue('mock-notification-id'),
   notifySupervisors: vi.fn().mockResolvedValue(['mock-notification-id']),
   notifyRole: vi.fn().mockResolvedValue(['mock-notification-id']),
@@ -74,7 +74,7 @@ vi.mock('../lib/notificationService', () => ({
 }));
 
 // Mock notificationManager
-vi.mock('../lib/notificationManager', () => ({
+vi.mock('../services/notifications/notificationManager', () => ({
   addNotification: vi.fn().mockReturnValue({ id: 'mock-local-id' }),
 }));
 

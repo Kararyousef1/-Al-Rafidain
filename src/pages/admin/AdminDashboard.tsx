@@ -15,12 +15,13 @@
 
 import { useState, useEffect } from 'react';
 import { Users, Shield, Settings, Activity, ArrowUp, Database, Cpu, Loader } from 'lucide-react';
-import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { supabase } from '../../services/supabase/supabase';
+import { auditLogService, userService, incidentService, gatekeeperVisitorLogService, movementLogService } from '../../services/sdk';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات (تحلّ محل any)
@@ -136,32 +137,30 @@ export default function AdminDashboard() {
         let emps: EmployeeStatusRecord[] = [];
         let incs: IncidentStatusRecord[] = [];
         let logs: AuditLogRow[] = [];
-        let visitors: CountRecord[] = [];
-        let movements: CountRecord[] = [];
+        let visitorsCount = 0;
+        let movementsCount = 0;
 
         try {
-          const res = await supabase.from('profiles').select('id, status');
-          if (!res.error && res.data) emps = res.data as EmployeeStatusRecord[];
+          const profilesData = await userService.findAllUsers();
+          emps = profilesData as unknown as EmployeeStatusRecord[];
         } catch (e) { console.warn('Failed to fetch profiles:', getErrorMessage(e)); }
 
         try {
-          const res = await supabase.from('incidents').select('id, status');
-          if (!res.error && res.data) incs = res.data as IncidentStatusRecord[];
+          const incidentsData = await incidentService.findAll({ filters: {} });
+          incs = incidentsData as IncidentStatusRecord[];
         } catch (e) { console.warn('Failed to fetch incidents:', getErrorMessage(e)); }
 
         try {
-          const res = await supabase.from('audit_logs').select('*, profiles:actor_id(full_name)').order('timestamp', { ascending: false }).limit(50);
-          if (!res.error && res.data) logs = res.data as AuditLogRow[];
+          const auditData = await auditLogService.findAllWithProfiles({ limit: 50 });
+          logs = auditData as AuditLogRow[];
         } catch (e) { console.warn('Failed to fetch logs:', getErrorMessage(e)); }
 
         try {
-          const res = await supabase.from('gatekeeper_visitor_logs').select('id').gte('check_in_time', todayIso);
-          if (!res.error && res.data) visitors = res.data as CountRecord[];
+          visitorsCount = await gatekeeperVisitorLogService.countVisitorsSince(todayIso);
         } catch (e) { console.warn('Failed to fetch visitors:', getErrorMessage(e)); }
 
         try {
-          const res = await supabase.from('movements_log').select('id').gte('departure_at', todayIso);
-          if (!res.error && res.data) movements = res.data as CountRecord[];
+          movementsCount = await movementLogService.countMovementsSince(todayIso);
         } catch (e) { console.warn('Failed to fetch movements:', getErrorMessage(e)); }
 
         const todayLogs = logs.filter((l) => new Date(l.timestamp).getTime() >= today.getTime());
@@ -182,8 +181,8 @@ export default function AdminDashboard() {
           activeProblems: incs.filter((i) => i.status !== 'closed' && i.status !== 'resolved').length,
           totalProblems: incs.length,
           todayActions: todayLogs.length,
-          visitorsToday: visitors.length,
-          movementsToday: movements.length,
+          visitorsToday: visitorsCount,
+          movementsToday: movementsCount,
           recentLogs,
         });
       } catch (err) {

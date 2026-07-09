@@ -25,11 +25,11 @@ import {
   FileText, Calendar, MessageSquare,
   ChevronRight, Loader2, AlertTriangle, RefreshCw,
 } from 'lucide-react';
-import { useAuthStore, useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import Card from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { supabase } from '../../services/supabase/supabase';
+import Card from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 

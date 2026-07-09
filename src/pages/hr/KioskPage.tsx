@@ -17,12 +17,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { LogIn, LogOut, Search, CheckCircle, XCircle, Shield, Users, Clock, Loader2, AlertTriangle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { employeeService } from '../../services/sdk/EmployeeService';
+import { departmentService } from '../../services/sdk/DepartmentService';
+import { attendanceService, attendanceSummaryService } from '../../services/sdk/AttendanceService';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { useUIStore } from '../../store';
-import { notifyUser } from '../../lib/notificationService';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { notifyUser } from '../../services/notifications/notificationService';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════════════════
 //  أنواع البيانات
@@ -120,39 +122,31 @@ export default function KioskPage() {
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
 
-      // جلب الموظفين النشطين من جدول employees (الصحيح)
-      const { data: emps, error: empsErr } = await supabase
-        .from('employees')
-        .select('id, employee_code, full_name_ar, email, position, is_active, user_id, department_id')
-        .eq('is_active', true);
-
-      if (empsErr) throw empsErr;
+      // جلب الموظفين النشطين
+      const emps = await employeeService.findAll({ filters: { is_active: true } });
 
       // جلب أسماء الأقسام
-      const { data: depts } = await supabase.from('departments').select('id, name_ar');
+      const depts = await departmentService.findAll();
       const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
 
-      const empList: EmployeeRecord[] = (emps || []).map((e) => ({
+      const empList: EmployeeRecord[] = (emps || []).map((e: any) => ({
         ...e,
         department: deptMap.get(e.department_id || '') || '',
       }));
       setEmployees(empList);
 
-      // جلب سجلات البصمات لليوم من attendance_logs (الجدول الصحيح)
-      const { data: logs, error: logsErr } = await supabase
-        .from('attendance_logs')
-        .select('*')
-        .eq('shift_date', today)
-        .order('punch_time', { ascending: false });
-
-      if (logsErr) throw logsErr;
+      // جلب سجلات البصمات لليوم
+      const logs = await attendanceService.findAll({
+        filters: { shift_date: today },
+        orderBy: 'punch_time',
+        ascending: false,
+      });
       setTodayLogs((logs || []) as AttendanceLogRecord[]);
 
-      // جلب ملخص الحضور لليوم من attendance_summary
-      const { data: summaries } = await supabase
-        .from('attendance_summary')
-        .select('employee_id, status, check_in, check_out, shift_type')
-        .eq('shift_date', today);
+      // جلب ملخص الحضور لليوم
+      const summaries = await attendanceSummaryService.findAll({
+        filters: { shift_date: today },
+      });
 
       const statusMap = new Map<string, EmployeeStatus>();
       (summaries || []).forEach((s: EmployeeStatus) => {
@@ -230,21 +224,17 @@ export default function KioskPage() {
       }
 
       // إدخال البصمة في جدول attendance_logs
-      const record = {
-        employee_id: employee.id,
-        punch_time: now.toISOString(),
-        shift_date: shiftDate,
-        source: 'ADMS',
-        verification_type: 'finger',
-      };
-
-      const { error: insertErr } = await supabase
-        .from('attendance_logs')
-        .insert(record);
-
-      if (insertErr) {
-        // إذا كان التكرار، نتجاهله (ON CONFLICT DO NOTHING)
-        if (!insertErr.message.includes('duplicate') && !insertErr.message.includes('unique')) {
+      try {
+        await attendanceService.create({
+          employee_id: employee.id,
+          punch_time: now.toISOString(),
+          shift_date: shiftDate,
+          source: 'ADMS',
+          verification_type: 'finger',
+        });
+      } catch (insertErr: any) {
+        // إذا كان التكرار، نتجاهله
+        if (!insertErr.message?.includes('duplicate') && !insertErr.message?.includes('unique')) {
           throw insertErr;
         }
       }

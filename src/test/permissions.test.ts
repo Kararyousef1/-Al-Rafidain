@@ -16,8 +16,8 @@ import {
   getEffectivePermissions,
   hasPermission,
   type PermissionKey,
-} from '../constants/permissions';
-import type { UserRole } from '../types';
+} from '../core/constants/permissions';
+import type { UserRole } from '../../shared/types';
 
 describe('constants/permissions', () => {
   describe('DEFAULT_ROLE_PERMISSIONS', () => {

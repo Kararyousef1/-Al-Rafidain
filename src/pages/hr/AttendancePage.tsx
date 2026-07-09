@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Clock, Download, LogIn, LogOut, Loader } from 'lucide-react';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import Card from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
-import { useUIStore } from '../../store';
-import { supabase } from '../../sdk/supabase';
+import Card from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
+import { useUIStore } from '../../core/stores';
+import { employeeService } from '../../services/sdk/EmployeeService';
+import { attendanceService } from '../../services/sdk/AttendanceService';
+import { departmentService } from '../../services/sdk/DepartmentService';
 
 export default function AttendancePage() {
   const { addToast } = useUIStore();
@@ -21,13 +23,16 @@ export default function AttendancePage() {
         const todayEnd = endOfDay(new Date()).toISOString();
 
         // جلب جميع الموظفين وسجلات اليوم
-        const [{ data: emps }, { data: logs }] = await Promise.all([
-          supabase.from('employees').select('id, full_name_ar, department_id, is_active').eq('is_active', true),
-          supabase.from('attendance_logs').select('*').gte('punch_time', todayStart).lte('punch_time', todayEnd)
+        const [emps, logs, depts] = await Promise.all([
+          employeeService.findAll({ filters: { is_active: true } }),
+          attendanceService.findAll({
+            filters: { punch_time: todayStart },
+            orderBy: 'punch_time',
+            ascending: true,
+          }),
+          departmentService.findAll(),
         ]);
 
-        // جلب أسماء الأقسام
-        const { data: depts } = await supabase.from('departments').select('id, name_ar');
         const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
 
         if (!emps || !logs) return;

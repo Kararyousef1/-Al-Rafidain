@@ -18,8 +18,8 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Calendar, FileText, Send, Clock, Loader, AlertTriangle,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore, useUIStore } from '../../store';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { employeeService, leaveService, leaveBalanceService, permissionRequestService } from '../../services/sdk';
 import {
   linkLeaveApproval,
   linkLeaveRejection,
@@ -27,7 +27,7 @@ import {
   notifyEmployeeLeaveApproved,
   notifyEmployeeLeaveRejected,
   notifyEmployeePermissionApproved,
-} from '../../lib/leaveAttendanceLink';
+} from '../../services/integrations/leaveAttendanceLink';
 import {
   LeaveType, LeaveBalance,
   DEFAULT_LEAVE_SETTINGS, calculateWorkingDays,
@@ -37,7 +37,7 @@ import {
 import {
   PermissionType, PERMISSION_TYPE_COLORS,
 } from '../../utils/shiftUtils';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات (تحلّ محل any)
@@ -157,15 +157,15 @@ export default function LeaveRequestPage() {
   // ── Get real employee ID ──────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
-    supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          const empId = (data as { id: string }).id;
-          setRealEmployeeId(empId);
-          supabase.from('leave_balance').select('*').eq('employee_id', empId).eq('year', new Date().getFullYear()).maybeSingle()
-            .then(({ data: bd }) => { if (bd) setBalance(bd as unknown as LeaveBalance); });
-        }
-      });
+    (async () => {
+      const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+      if (employees.length > 0) {
+        const empId = employees[0].id;
+        setRealEmployeeId(empId);
+        const bd = await leaveBalanceService.findBalanceByEmployee(empId, new Date().getFullYear());
+        if (bd) setBalance(bd as unknown as LeaveBalance);
+      }
+    })();
   }, [user]);
 
   useEffect(() => { if (!user) return; fetchRequests(); fetchPermissions(); /* eslint-disable-next-line */ }, [user, realEmployeeId]);
@@ -180,10 +180,12 @@ export default function LeaveRequestPage() {
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      let query = supabase.from('leaves').select('*');
-      if (!canApprove && realEmployeeId) query = query.eq('employee_id', realEmployeeId);
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
+      let data;
+      if (!canApprove && realEmployeeId) {
+        data = await leaveService.findLeavesByEmployee(realEmployeeId);
+      } else {
+        data = await leaveService.findAll({ orderBy: 'created_at', ascending: false });
+      }
       setRequests((data as LeaveRequestRecord[]) || []);
     } catch (err) {
       const msg = getErrorMessage(err);
@@ -194,8 +196,7 @@ export default function LeaveRequestPage() {
   const fetchPermissions = async () => {
     setPermLoading(true);
     try {
-      const { data, error } = await supabase.from('permissions_request').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
+      const data = await permissionRequestService.findAll({ orderBy: 'created_at', ascending: false });
       setPermissions((data as PermissionRequest[]) || []);
     } catch { /* table may not exist */ }
     finally { setPermLoading(false); }
@@ -213,21 +214,18 @@ export default function LeaveRequestPage() {
     try {
       let targetId = realEmployeeId;
       if (!targetId) {
-        const { data: emp } = await supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle();
-        if (emp) targetId = (emp as { id: string }).id;
+        const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+        if (employees.length > 0) targetId = employees[0].id;
       }
 
-      const { error } = await supabase.from('leaves').insert({
+      await leaveService.createLeave({
         employee_id: targetId || user.id,
         leave_type: formData.leave_type,
         date_from: formData.start_date,
         date_to: formData.end_date,
         working_days_count: calculatedDays,
         reason: formData.reason,
-        status: 'انتظار',
-        approved_by: null,
       });
-      if (error) throw error;
       addToast('✅ تم إرسال طلب الإجازة', 'success');
       setShowForm(false);
       fetchRequests();
@@ -239,12 +237,9 @@ export default function LeaveRequestPage() {
   const handleApprove = async (id: string) => {
     setProcessingId(id);
     try {
-      const { data: leaveData } = await supabase
-        .from('leaves').select('id, employee_id, leave_type, date_from, date_to, reason, employee_name')
-        .eq('id', id).single();
+      const leaveData = await leaveService.findById(id) as LeaveDataForLink | null;
 
-      const { error } = await supabase.from('leaves').update({ status: 'موافق', approved_by: realEmployeeId || null }).eq('id', id);
-      if (error) throw error;
+      await leaveService.approveLeave(id, realEmployeeId || user?.id || '');
 
       const ld = leaveData as LeaveDataForLink | null;
       if (ld) {
@@ -264,12 +259,9 @@ export default function LeaveRequestPage() {
     if (!rejectingId || !rejectionReason.trim()) { addToast('يرجى إدخال سبب الرفض', 'warning'); return; }
     setProcessingId(rejectingId);
     try {
-      const { data: leaveData } = await supabase
-        .from('leaves').select('id, employee_id, leave_type, date_from, date_to, status')
-        .eq('id', rejectingId).single();
+      const leaveData = await leaveService.findById(rejectingId) as LeaveDataForLink | null;
 
-      const { error } = await supabase.from('leaves').update({ status: 'مرفوض', rejection_reason: rejectionReason }).eq('id', rejectingId);
-      if (error) throw error;
+      await leaveService.rejectLeave(rejectingId, user?.id || '', rejectionReason);
 
       const ld = leaveData as LeaveDataForLink | null;
       if (ld && ld.status === 'موافق') {
@@ -290,10 +282,10 @@ export default function LeaveRequestPage() {
     try {
       let targetId = realEmployeeId;
       if (!targetId) {
-        const { data: emp } = await supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle();
-        if (emp) targetId = (emp as { id: string }).id;
+        const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+        if (employees.length > 0) targetId = employees[0].id;
       }
-      const { error } = await supabase.from('permissions_request').insert({
+      await permissionRequestService.createRequest({
         employee_id: targetId || user.id,
         employee_name: user.full_name || 'موظف',
         employee_department: user.department || null,
@@ -302,9 +294,7 @@ export default function LeaveRequestPage() {
         expected_out_time: permFormData.expected_out_time,
         expected_return_time: permFormData.permission_type === 'مغادرة' ? null : permFormData.expected_return_time,
         reason: permFormData.reason,
-        status: 'انتظار',
       });
-      if (error) throw error;
       addToast('✅ تم إرسال طلب الزمنية', 'success');
       setPermShowForm(false);
       fetchPermissions();
@@ -316,12 +306,9 @@ export default function LeaveRequestPage() {
   const handlePermApprove = async (id: string) => {
     setPermProcessingId(id);
     try {
-      const { data: permData } = await supabase
-        .from('permissions_request').select('id, employee_id, date, expected_out_time, expected_return_time')
-        .eq('id', id).single();
+      const permData = await permissionRequestService.findById(id) as PermissionDataForLink | null;
 
-      const { error } = await supabase.from('permissions_request').update({ status: 'موافق', approved_by: realEmployeeId }).eq('id', id);
-      if (error) throw error;
+      await permissionRequestService.approveRequest(id, realEmployeeId || user?.id || '');
 
       const pd = permData as PermissionDataForLink | null;
       if (pd) {
@@ -339,8 +326,7 @@ export default function LeaveRequestPage() {
     if (!permRejectingId || !permRejectionReason.trim()) { addToast('يرجى إدخال سبب الرفض', 'warning'); return; }
     setPermProcessingId(permRejectingId);
     try {
-      const { error } = await supabase.from('permissions_request').update({ status: 'مرفوض', rejection_reason: permRejectionReason }).eq('id', permRejectingId);
-      if (error) throw error;
+      await permissionRequestService.rejectRequest(permRejectingId, user?.id || '', permRejectionReason);
       addToast('✅ تم الرفض', 'success');
       setPermRejectingId(null); setPermRejectionReason('');
       fetchPermissions();

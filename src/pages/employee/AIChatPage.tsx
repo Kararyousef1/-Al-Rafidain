@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, Sparkles, Trash2, Copy, Check } from 'lucide-react';
-import { useUIStore, useAuthStore } from '../../store';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { supabase } from '../../sdk/supabase';
+import { supabase } from '../../services/supabase/supabase';
 
 // ════════════════════════════════════════════════════════════════
 //  النماذج المتاحة (تتحكم الإدارة بالنموذج النشط من الإعدادات)

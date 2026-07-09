@@ -24,8 +24,9 @@ import {
   Minimize2, ZoomIn, ZoomOut, RotateCcw, Info, Star, Lock,
   Unlock, Bell, Activity, TrendingUp, Award, Loader2, X,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import Card from '../../components/ui/Card';
+import { supabase } from '../../services/supabase/supabase';
+import { userService } from '../../services/sdk';
+import Card from '../../shared/components/ui/Card';
 
 // ════════════════════════════════════════════════════════════════
 //  Constants
@@ -306,9 +307,8 @@ export default function AdminPermissionsTree() {
     else setRefreshing(true);
     setError(null);
     try {
-      const { data, error: err } = await supabase.from('profiles').select('*');
-      if (err) throw err;
-      setEmployees(data || []);
+      const data = await userService.findAllUsers();
+      setEmployees((data || []) as unknown as EmployeeNode[]);
     } catch (err) {
       console.error('[AdminPermissionsTree] فشل جلب البيانات:', err);
       setError(err instanceof Error ? err.message : 'تعذّر تحميل البيانات');

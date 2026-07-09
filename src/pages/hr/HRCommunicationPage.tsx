@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
 import { Mail, Inbox, Send, ChevronRight, Loader, Archive, Check, Eye } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
 import { formatDistanceToNow } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { messageService, HrMessageRecord } from '../../services/sdk';
+import { supabase } from '../../services/supabase/supabase';
 
 interface Message {
   id: string;
@@ -14,7 +15,7 @@ interface Message {
   priority: string;
   status: 'new' | 'read' | 'replied';
   created_at: string;
-  profiles: { full_name: string, department: string };
+  profiles?: { full_name: string, department: string } | null;
 }
 
 const priorityStyles: Record<string, string> = {
@@ -30,6 +31,7 @@ export default function HRCommunicationPage() {
 
   useEffect(() => {
     fetchMessages();
+    // Realtime subscription - this is an acceptable exception
     const channel = supabase.channel('hr-messages-listener')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hr_messages' }, fetchMessages)
       .subscribe();
@@ -37,20 +39,19 @@ export default function HRCommunicationPage() {
   }, []);
 
   const fetchMessages = async () => {
-    const { data, error } = await supabase
-      .from('hr_messages')
-      .select('*, profiles(full_name, department)')
-      .order('created_at', { ascending: false });
-    if (error) console.error(error);
-    else setMessages(data || []);
+    const data = await messageService.findAllWithProfiles();
+    setMessages(data || []);
     setLoading(false);
   };
 
   const handleSelectMessage = async (msg: Message) => {
     setSelected(msg);
     if (msg.status === 'new') {
-      const { error } = await supabase.from('hr_messages').update({ status: 'read' }).eq('id', msg.id);
-      if (error) console.error(error);
+      try {
+        await messageService.updateMessageStatus(msg.id, 'read');
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 

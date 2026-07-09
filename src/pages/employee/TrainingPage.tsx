@@ -6,8 +6,8 @@ import {
   Lock, AlertTriangle, Settings,
   GraduationCap, Target, Flame, Layers,
 } from 'lucide-react';
-import Card from '../../components/ui/Card';
-import { supabase } from '../../lib/supabase';
+import Card from '../../shared/components/ui/Card';
+import { supabase } from '../../services/supabase/supabase';
 
 // ── Types ──
 type CourseStatus = 'completed' | 'in_progress' | 'not_started' | 'locked';

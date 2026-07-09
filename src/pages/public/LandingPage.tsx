@@ -30,11 +30,11 @@ import {
   Facebook, Twitter, Linkedin, Instagram, Youtube, Sparkles, Eye, FileText,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
+import { useUIStore } from '../../core/stores';
+import { reviewService } from '../../services/sdk';
 import type {
   LandingVideo, LandingProduct, LandingAgent, LandingStat,
-} from '../../types/landing';
+} from '../../shared/types/landing';
 
 interface LandingPageProps {
   onLoginClick: () => void;
@@ -1238,14 +1238,14 @@ export default function LandingPage({
                       e.preventDefault();
                       setReviewSubmitted(true);
                       try {
-                        await supabase.from('customer_reviews').insert({
+                        await reviewService.create({
                           product_id: selectedProduct.id,
                           product_name: isRTL ? selectedProduct.titleAr : selectedProduct.titleEn,
                           customer_name: reviewForm.name,
                           customer_email: reviewForm.email,
                           review_text: reviewForm.text,
                           rating: reviewForm.rating,
-                        });
+                        } as unknown as Record<string, unknown>);
                       } catch (err: unknown) {
                         console.error('Failed to submit review', err);
                       }

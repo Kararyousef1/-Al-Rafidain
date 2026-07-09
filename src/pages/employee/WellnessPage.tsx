@@ -1,38 +1,76 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  WellnessPage - صفحة العافية اليومية (نسخة مُصلحة)
+ *  WellnessPage - صفحة العافية اليومية (نسخة SDK جديدة)
+ *  تستخدم WellnessEntryService للوصول إلى البيانات
  * ════════════════════════════════════════════════════════════════
- *
- *  🔧 الإصلاحات المُطبّقة:
- *  ─────────────────────────────────────────────────────────────────
- *  ✅ تنظيف جميع markdown artifacts (&lt; &gt; &amp; + روابط مكسورة)
- *  ✅ إصلاح template literals المكسورة (className)
- *  ✅ استخدام user_id بدل employee_id (يوافق Migration 052)
- *  ✅ استخدام طبقة SDK (src/sdk/wellness.ts) بدل استعلامات مضمّنة
- *  ✅ منع التسجيل المزدوج: تحديث سجل اليوم إن وُجد
- *  ✅ عرض التاريخ (آخر 7 سجلات) + متوسط الدرجات
- *  ✅ إظهار رسالة الخطأ الحقيقية من Supabase
- *  ✅ إزالة الاستيراد غير المستخدم (Badge)
- *  ════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { Heart, Smile, Activity, Brain, Calendar, TrendingUp, Loader2, RefreshCw } from 'lucide-react';
-import { useUIStore, useAuthStore } from '../../store';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
 // ─── طبقة SDK (مصدر بيانات نظيف) ───────────────────────────────
-import {
-  saveWellnessEntry,
-  fetchWellnessHistory,
-  getTodayEntry,
-  getWellnessStats,
-  type WellnessMood,
-  type WellnessEntry,
-} from '../../sdk/wellness';
+import { wellnessEntryService } from '../../services/sdk/WellnessService';
+
+// ════════════════════════════════════════════════════════════════
+//  الأنواع المحلية
+// ════════════════════════════════════════════════════════════════
+
+type WellnessMood = 'great' | 'good' | 'neutral' | 'bad' | 'terrible';
+
+interface WellnessEntry {
+  id: number;
+  userId: string;
+  date: string;
+  mood: WellnessMood;
+  stress: number;
+  energy: number;
+  score: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  دوال مساعدة محلية
+// ════════════════════════════════════════════════════════════════
+
+const MOOD_SCORE: Record<WellnessMood, number> = {
+  great: 90,
+  good: 75,
+  neutral: 60,
+  bad: 40,
+  terrible: 20,
+};
+
+function calculateWellnessScore(input: { stress: number; energy: number; mood: WellnessMood }): number {
+  return Math.round((100 - input.stress) * 0.4 + input.energy * 0.4 + MOOD_SCORE[input.mood] * 0.2);
+}
+
+function todayISO(): string {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+}
+
+function toEntry(d: any): WellnessEntry {
+  return {
+    id: d.id,
+    userId: d.user_id,
+    date: d.date,
+    mood: (d.mood || 'neutral') as WellnessMood,
+    stress: d.stress ?? 50,
+    energy: d.energy ?? 50,
+    score: d.score ?? 50,
+    notes: d.notes ?? null,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+  };
+}
 
 // ════════════════════════════════════════════════════════════════
 //  الثوابت
@@ -93,13 +131,15 @@ export default function WellnessPage() {
     setLoading(true);
     setError(null);
     try {
-      const [todayEntry, hist, stats] = await Promise.all([
-        getTodayEntry(user.id),
-        fetchWellnessHistory(user.id, 7),
-        getWellnessStats(user.id, 7).catch(() => ({ avgScore: 0, count: 0 })),
+      const today = todayISO();
+      const [entries, stats] = await Promise.all([
+        wellnessEntryService.findByUser(user.id, 7),
+        wellnessEntryService.getStats(user.id, 7),
       ]);
 
-      // إن وُجد سجل اليوم، عبّئ النموذج به (للسماح بالتحديث)
+      const mappedHistory = (entries || []).map(toEntry);
+      const todayEntry = mappedHistory.find((e) => e.date === today);
+
       if (todayEntry) {
         setMood(todayEntry.mood);
         setStress(todayEntry.stress);
@@ -110,7 +150,7 @@ export default function WellnessPage() {
         setTodayDone(false);
       }
 
-      setHistory(hist);
+      setHistory(mappedHistory);
       setAvgScore(stats.avgScore || null);
     } catch (err) {
       console.error('[WellnessPage] فشل تحميل البيانات:', err);
@@ -129,19 +169,24 @@ export default function WellnessPage() {
     if (!user?.id) return;
     setSubmitting(true);
     try {
-      await saveWellnessEntry(user.id, {
+      const score = calculateWellnessScore({ stress, energy, mood });
+      const today = todayISO();
+
+      await wellnessEntryService.saveEntry(user.id, {
         mood,
         stress,
         energy,
-        notes: notes || undefined,
+        score,
+        notes: notes || null,
+        date: today,
       });
+
       setShowForm(false);
       addToast(todayDone ? 'تم تحديث حالتك اليوم ✅' : 'تم تسجيل حالتك اليوم بنجاح ✅', 'success');
-      await loadData(); // إعادة التحميل لعرض التحديثات
+      await loadData();
     } catch (err) {
       console.error('[WellnessPage] فشل الحفظ:', err);
-      const message =
-        err instanceof Error && err.message ? err.message : 'حدث خطأ أثناء حفظ الحالة';
+      const message = err instanceof Error && err.message ? err.message : 'حدث خطأ أثناء حفظ الحالة';
       addToast(message, 'error');
     } finally {
       setSubmitting(false);

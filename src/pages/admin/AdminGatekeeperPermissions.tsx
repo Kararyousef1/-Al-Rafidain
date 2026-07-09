@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Toast from '../../components/ui/Toast';
+import { supabase } from '../../services/supabase/supabase';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Toast from '../../shared/components/ui/Toast';
 import { ShieldCheck, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
 
 export default function AdminGatekeeperPermissions() {

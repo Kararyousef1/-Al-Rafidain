@@ -1,3 +1,4 @@
 {
-    "geminicodeassist.outlines.automaticOutlineGeneration": true
+    "geminicodeassist.outlines.automaticOutlineGeneration": true,
+    "CodeGPT.apiKey": "Ollama"
 }

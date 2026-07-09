@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, Clock, Star, Send, Loader } from 'lucide-react';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
-import { useUIStore, useAuthStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import { isLocalUser } from '../../lib/utils';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Badge from '../../shared/components/ui/Badge';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import { surveyResponseService } from '../../services/sdk';
+import { isLocalUser } from '../../services/utils';
 
 const surveys = [
   {
@@ -55,13 +55,9 @@ export default function SurveyPage() {
         return;
       }
       
-      const { data, error } = await supabase
-        .from('survey_responses')
-        .select('survey_id')
-        .eq('employee_id', user.id);
-        
-      if (data) {
-        setCompleted(new Set(data.map(d => d.survey_id)));
+      const responses = await surveyResponseService.findAll({ filters: { employee_id: user.id } });
+      if (responses) {
+        setCompleted(new Set((responses as any[]).map((d: any) => d.survey_id)));
       }
       setLoading(false);
     };
@@ -82,12 +78,11 @@ export default function SurveyPage() {
         return;
       }
       
-      const { error } = await supabase.from('survey_responses').insert({
+      await surveyResponseService.createResponse({
         survey_id: activeSurvey,
         employee_id: user?.id,
         answers
-      });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       setCompleted(prev => new Set([...prev, activeSurvey!]));
       setActiveSurvey(null);
       setAnswers({});

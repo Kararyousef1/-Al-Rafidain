@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Cpu, Save, RefreshCw, CheckCircle } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
-import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Badge from '../../shared/components/ui/Badge';
+import { useUIStore } from '../../core/stores';
+import { settingsService } from '../../services/sdk';
 
 const models = [
   { id: 'claude-3-sonnet', name: 'Claude 3.5 Sonnet', provider: 'Anthropic', status: 'active', latency: '1.2s', accuracy: 94 },
@@ -24,11 +24,11 @@ export default function AIConfigPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const { data, error } = await supabase.from('system_settings').select('ai_settings').eq('id', 'singleton').single();
-        if (!error && data?.ai_settings) {
-          if (data.ai_settings.activeModel) setActiveModel(data.ai_settings.activeModel);
-          if (data.ai_settings.temperature !== undefined) setTemperature(data.ai_settings.temperature);
-          if (data.ai_settings.maxTokens !== undefined) setMaxTokens(data.ai_settings.maxTokens);
+        const aiSettings = await settingsService.findAiSettings();
+        if (aiSettings) {
+          if (aiSettings.activeModel) setActiveModel(aiSettings.activeModel);
+          if (aiSettings.temperature !== undefined) setTemperature(aiSettings.temperature);
+          if (aiSettings.maxTokens !== undefined) setMaxTokens(aiSettings.maxTokens);
         }
       } catch (err) {
         console.error('Error loading AI settings:', err);
@@ -40,10 +40,7 @@ export default function AIConfigPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase.from('system_settings')
-        .update({ ai_settings: { activeModel, temperature, maxTokens } })
-        .eq('id', 'singleton');
-      if (error) throw error;
+      await settingsService.updateAiSettings({ activeModel, temperature, maxTokens } as unknown as Record<string, unknown>);
       addToast('تم حفظ إعدادات AI بنجاح', 'success');
     } catch (err) {
       console.error(err);

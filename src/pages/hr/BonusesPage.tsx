@@ -6,12 +6,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Award, Plus, Loader2, CheckCircle, XCircle, Eye, Filter } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { bonusService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { Bonus, BonusType, PayrollStatus } from '../../types/payroll';
+import type { Bonus, BonusType, PayrollStatus } from '../../shared/types/payroll';
 import { BONUS_TYPE_LABELS, PAYROLL_STATUS_LABELS, PAYROLL_STATUS_COLORS, formatCurrency } from '../../utils/payrollUtils';
 import { Modal, FormField, ModalActions, EmployeePicker } from './LoansPage';
 
@@ -53,12 +53,15 @@ export default function BonusesPage() {
   const fetchBonuses = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('bonuses')
-        .select(`*, employees!inner(full_name_ar, employee_code)`)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setBonuses((data || []) as unknown as Bonus[]);
+      const data = await bonusService.findAllBonuses();
+      // Fetch employee names for display
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (data || []).map((b: any) => ({
+        ...b,
+        employees: empMap.get(b.employee_id) || null,
+      }));
+      setBonuses(enriched as unknown as Bonus[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -74,16 +77,12 @@ export default function BonusesPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('bonuses').insert({
+      await bonusService.createBonus({
         employee_id: formData.employee_id,
         bonus_type: formData.bonus_type,
         amount: Number(formData.amount),
         reason: formData.reason,
-        period_start: formData.period_start || null,
-        period_end: formData.period_end || null,
-        status: 'pending',
       });
-      if (error) throw error;
       addToast('تم إنشاء المكافأة بنجاح', 'success');
       setShowCreateModal(false);
       setFormData({ employee_id: '', bonus_type: 'performance', amount: 0, reason: '', period_start: '', period_end: '' });
@@ -95,8 +94,7 @@ export default function BonusesPage() {
 
   const handleApprove = async (bonus: Bonus) => {
     try {
-      const { error } = await supabase.from('bonuses').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', bonus.id);
-      if (error) throw error;
+      await bonusService.approveBonus(bonus.id);
       addToast('تمت الموافقة على المكافأة', 'success');
       await fetchBonuses();
     } catch (err) {
@@ -106,8 +104,7 @@ export default function BonusesPage() {
 
   const handleReject = async (bonus: Bonus) => {
     try {
-      const { error } = await supabase.from('bonuses').update({ status: 'cancelled' }).eq('id', bonus.id);
-      if (error) throw error;
+      await bonusService.cancelBonus(bonus.id);
       addToast('تم إلغاء المكافأة', 'success');
       await fetchBonuses();
     } catch (err) {

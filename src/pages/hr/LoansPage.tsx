@@ -6,12 +6,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { CreditCard, Plus, Loader2, CheckCircle, XCircle, Eye, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { employeeLoanService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { EmployeeLoan, LoanStatus } from '../../types/payroll';
+import type { EmployeeLoan, LoanStatus } from '../../shared/types/payroll';
 import { LOAN_STATUS_LABELS, LOAN_STATUS_COLORS, formatCurrency } from '../../utils/payrollUtils';
 
 export default function LoansPage() {
@@ -33,12 +33,11 @@ export default function LoansPage() {
   const fetchLoans = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('employee_loans')
-        .select(`*, employees!inner(full_name_ar, employee_code)`)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setLoans((data || []) as unknown as EmployeeLoan[]);
+      const data = await employeeLoanService.findAll({ orderBy: 'created_at', ascending: false });
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (data || []).map((l: any) => ({ ...l, employees: empMap.get(l.employee_id) || null }));
+      setLoans(enriched as unknown as EmployeeLoan[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -55,17 +54,13 @@ export default function LoansPage() {
     }
     const installment = formData.amount / formData.months_count;
     try {
-      const { error } = await supabase.from('employee_loans').insert({
+      await employeeLoanService.createLoan({
         employee_id: formData.employee_id,
         amount: Number(formData.amount),
-        remaining_amount: Number(formData.amount),
+        reason: formData.purpose,
+        installment_count: Number(formData.months_count),
         monthly_installment: installment,
-        months_count: Number(formData.months_count),
-        purpose: formData.purpose,
-        start_date: formData.start_date,
-        status: 'pending',
       });
-      if (error) throw error;
       addToast('تم إنشاء طلب السلفة بنجاح', 'success');
       setShowCreateModal(false);
       setFormData({ employee_id: '', amount: 0, months_count: 12, purpose: '', start_date: format(new Date(), 'yyyy-MM-dd') });
@@ -79,12 +74,7 @@ export default function LoansPage() {
     const end = new Date(loan.start_date);
     end.setMonth(end.getMonth() + loan.months_count);
     try {
-      const { error } = await supabase.from('employee_loans').update({
-        status: 'active',
-        end_date: format(end, 'yyyy-MM-dd'),
-        remaining_amount: loan.amount,
-      }).eq('id', loan.id);
-      if (error) throw error;
+      await employeeLoanService.approveLoan(loan.id, '');
       addToast('تمت الموافقة على السلفة', 'success');
       await fetchLoans();
     } catch (err) {
@@ -96,11 +86,7 @@ export default function LoansPage() {
     const reason = prompt('سبب الرفض:');
     if (reason === null) return;
     try {
-      const { error } = await supabase.from('employee_loans').update({
-        status: 'rejected',
-        rejection_reason: reason,
-      }).eq('id', loan.id);
-      if (error) throw error;
+      await employeeLoanService.rejectLoan(loan.id, reason);
       addToast('تم رفض السلفة', 'success');
       await fetchLoans();
     } catch (err) {
@@ -343,7 +329,7 @@ export function EmployeePicker({ value, onChange }: { value: string; onChange: (
   const [employees, setEmployees] = useState<{ id: string; full_name_ar: string; employee_code: string }[]>([]);
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('employees').select('id, full_name_ar, employee_code').eq('is_active', true).order('full_name_ar');
+      const data = await employeeService.findAll({ filters: { is_active: true } });
       setEmployees((data || []) as any);
     })();
   }, []);

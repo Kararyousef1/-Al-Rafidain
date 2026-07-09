@@ -1,18 +1,9 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  AdminEmployeesPage - إدارة الموظفين (نسخة مُصلحة — Mobile/Tablet P2)
+ *  AdminEmployeesPage - إدارة الموظفين (نسخة مُصلحة)
+ *  تستخدم AdminUserService عبر Edge Functions
+ *  التدفق: Page → AdminUserService → Edge Function → Supabase Admin API
  * ════════════════════════════════════════════════════════════════
- *
- *  🔧 الإصلاحات المُطبّقة:
- *  ─────────────────────────────────────────────────────────────────
- *  ✅ P2: تخطيط المودال responsive (يتمرّز في الأعلى على الموبايل)
- *  ✅ P2: إحصائيات وبطاقات تتكيّف (grid-cols-2 → sm:grid-cols-4)
- *  ✅ تنظيف جميع markdown artifacts (40+ موضع)
- *  ✅ إصلاح confirm()/alert() المكسورة (أقواس ناقصة)
- *  ✅ إصلاح @alrafidain.com (كان رابط markdown)
- *  ✅ إزالة as any → أنواع صريحة
- *  ✅ معالجة أخطاء محكمة + toast بدل alert
- *  ════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -23,14 +14,13 @@ import {
   MessageSquare, FileText, Database, RefreshCw, Send, Clock, Calendar,
   BookOpen, BarChart3, Cpu, Brain,
 } from 'lucide-react';
-import Card from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import { GatekeeperType, UserRole } from '../../types';
+import Card from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import { GatekeeperType, UserRole } from '../../shared/types';
 import { exportToStyledExcel } from '../../utils/exportToExcel';
-import { useAuthStore, useUIStore } from '../../store';
-import { fetchAllEmployees, updateEmployeeProfile, uploadProfileImage } from '../../sdk/employees';
-import { createUser, deleteUser } from '../../sdk/auth';
-import { supabaseAdmin } from '../../sdk/supabaseAdmin';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { userService } from '../../services/sdk/UserService';
+import { adminUserService } from '../../services/sdk/AdminUserService';
 
 // ════════════════════════════════════════════════════════════════
 //  Types
@@ -56,12 +46,6 @@ interface EmployeeRecord {
   status?: string;
   gatekeeper_type?: GatekeeperType;
   gatekeeper_pin?: string;
-  last_sign_in_at?: string;
-}
-
-interface AuthUser {
-  id: string;
-  email: string;
   last_sign_in_at?: string;
 }
 
@@ -187,7 +171,6 @@ export default function AdminEmployeesPage() {
   const { addToast } = useUIStore();
 
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
-  const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -196,7 +179,6 @@ export default function AdminEmployeesPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState<EmployeeRecord | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [showAuthUsers, setShowAuthUsers] = useState(false);
   const [uploadingProfile, setUploadingProfile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<FormDataState>(EMPTY_FORM);
@@ -207,8 +189,8 @@ export default function AdminEmployeesPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAllEmployees();
-      setEmployees(data || []);
+      const data = await userService.findAllUsers();
+      setEmployees((data || []) as unknown as EmployeeRecord[]);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'تعذّر تحميل الموظفين';
       setError(message);
@@ -217,34 +199,23 @@ export default function AdminEmployeesPage() {
     }
   };
 
-  // ─── Fetch Auth Users ─────────────────────────────────────────
-  const fetchAuthUsers = async () => {
+  // ─── Delete User ─────────────────────────────────────────────
+  const handleDeleteUser = async (emp: EmployeeRecord) => {
+    if (!currentUser?.id) return;
+    if (!confirm(`حذف "${emp.full_name}" من النظام بالكامل؟`)) return;
     try {
-      if (!supabaseAdmin) {
-        addToast('مفتاح Service Role غير متوفر في ملف .env', 'error');
+      const result = await adminUserService.deleteUser({
+        target_user_id: emp.id,
+        deleted_by: currentUser.id,
+      });
+      if (result.error) {
+        addToast('فشل الحذف: ' + result.error, 'error');
         return;
       }
-      const { data, error: err } = await supabaseAdmin.auth.admin.listUsers();
-      if (err) throw err;
-      setAuthUsers(data?.users || []);
-      setShowAuthUsers(true);
+      setEmployees((prev) => prev.filter((e) => e.id !== emp.id));
+      addToast(`تم حذف "${emp.full_name}" بنجاح`, 'success');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'فشل جلب المستخدمين من Auth';
-      addToast(message, 'error');
-    }
-  };
-
-  // ─── Delete Auth User ─────────────────────────────────────────
-  const handleDeleteAuthUser = async (userId: string, email: string) => {
-    if (!confirm(`حذف "${email}" من النظام بالكامل؟`)) return;
-    try {
-      await deleteUser(userId);
-      setAuthUsers((prev) => prev.filter((u) => u.id !== userId));
-      setEmployees((prev) => prev.filter((e) => e.id !== userId));
-      addToast(`تم حذف "${email}" بنجاح`, 'success');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'فشل الحذف';
-      addToast(message, 'error');
+      addToast('فشل الحذف: ' + (err instanceof Error ? err.message : 'خطأ غير متوقع'), 'error');
     }
   };
 
@@ -255,6 +226,7 @@ export default function AdminEmployeesPage() {
       addToast('كلمة المرور يجب أن تكون 6 أحرف على الأقل.', 'error');
       return;
     }
+    if (!currentUser?.id) return;
 
     setSaving(true);
     const namePrefix = formData.email.includes('@') ? formData.email.split('@')[0] : formData.email;
@@ -262,12 +234,11 @@ export default function AdminEmployeesPage() {
 
     try {
       if (isEditMode && selectedEmp) {
-        await updateEmployeeProfile(selectedEmp.id, {
+        await userService.updateUser(selectedEmp.id, {
           full_name: formData.full_name,
           email: finalEmail,
           role: formData.role,
           rank: formData.rank,
-          manufacturing_dept: formData.manufacturing_dept,
           department: formData.department || formData.manufacturing_dept,
           position: formData.position,
           phone: formData.phone,
@@ -275,35 +246,30 @@ export default function AdminEmployeesPage() {
           profile_image: formData.profile_image,
           manager_id: formData.manager_id || undefined,
           supervisor_id: formData.supervisor_id || undefined,
-          department_manager_id: formData.department_manager_id || undefined,
-          shift: formData.shift,
+          status: 'active',
           permissions: formData.permissions,
           gatekeeper_pin: formData.gatekeeper_pin || '',
         });
-
-        if (formData.passcode.length >= 6 && supabaseAdmin) {
-          await supabaseAdmin.auth.admin
-            .updateUserById(selectedEmp.id, { password: formData.passcode })
-            .catch(() => {});
-        }
 
         setIsModalOpen(false);
         await fetchEmployees();
         addToast(`تم تحديث "${formData.full_name}" بنجاح`, 'success');
       } else {
-        await createUser({
+        const result = await adminUserService.createUser({
           email: finalEmail,
           password: formData.passcode,
-          fullName: formData.full_name,
+          full_name: formData.full_name,
           role: formData.role,
-          department: formData.department || formData.manufacturing_dept,
-          position: formData.position,
-          phone: formData.phone,
+          department_id: formData.department || formData.manufacturing_dept,
         });
 
-        setIsModalOpen(false);
-        await fetchEmployees();
-        addToast(`تم إنشاء "${formData.full_name}" — الدخول بـ: ${finalEmail}`, 'success');
+        if (result.error) {
+          addToast('فشل إنشاء المستخدم: ' + result.error, 'error');
+        } else {
+          setIsModalOpen(false);
+          await fetchEmployees();
+          addToast(`تم إنشاء "${formData.full_name}" — الدخول بـ: ${finalEmail}`, 'success');
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'فشل الحفظ';
@@ -335,8 +301,13 @@ export default function AdminEmployeesPage() {
   const handleFileUpload = async (file: File) => {
     setUploadingProfile(true);
     try {
-      const url = await uploadProfileImage(file);
-      setFormData((prev) => ({ ...prev, profile_image: url }));
+      const ext = file.name.split('.').pop();
+      const path = `profiles/${Date.now()}.${ext}`;
+      const { supabase } = await import('../../services/supabase/supabase');
+      const { error: uploadError } = await supabase.storage.from('public-assets').upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('public-assets').getPublicUrl(path);
+      setFormData((prev) => ({ ...prev, profile_image: urlData.publicUrl }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'فشل رفع الصورة';
       addToast(message, 'error');
@@ -420,8 +391,8 @@ export default function AdminEmployeesPage() {
           <p className="text-amber-100 text-xs font-bold mt-1">المعروض</p>
         </div>
         <div className="bg-gradient-to-br from-violet-500 to-violet-700 rounded-2xl p-3 sm:p-4 text-white">
-          <p className="text-xl sm:text-2xl font-black">{authUsers.length || '-'}</p>
-          <p className="text-violet-100 text-xs font-bold mt-1">في Auth</p>
+          <p className="text-xl sm:text-2xl font-black">{employees.length}</p>
+          <p className="text-violet-100 text-xs font-bold mt-1">إجمالي</p>
         </div>
       </div>
 
@@ -433,35 +404,10 @@ export default function AdminEmployeesPage() {
         <button onClick={handleExport} className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-semibold text-sm">
           <FileText size={18} /> تصدير Excel
         </button>
-        <button onClick={fetchAuthUsers} className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200 font-semibold text-sm">
-          <Trash2 size={18} /> إدارة Auth
-        </button>
         <button onClick={openCreateModal} className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-sm shadow-sm">
           <Plus size={18} /> إضافة مستخدم
         </button>
       </div>
-
-      {/* Auth Users Panel */}
-      {showAuthUsers && authUsers.length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
-          <h3 className="font-bold text-rose-800 mb-3">حسابات Authentication</h3>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {authUsers.filter((u) => u.email).map((u) => (
-              <div key={u.id} className="flex items-center justify-between bg-white rounded-xl p-3 border border-rose-100 gap-2">
-                <span className="font-semibold truncate min-w-0">{u.email}</span>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-slate-400 hidden sm:inline">
-                    {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'لم يدخل'}
-                  </span>
-                  <button onClick={() => handleDeleteAuthUser(u.id, u.email)} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 text-sm font-semibold">
-                    حذف
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -506,7 +452,7 @@ export default function AdminEmployeesPage() {
                 </Badge>
                 <div className="flex gap-2">
                   <button onClick={() => { setSelectedEmp(emp); setIsViewModalOpen(true); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg"><Eye size={16} /></button>
-                  <button onClick={() => handleDeleteAuthUser(emp.id, emp.email)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={16} /></button>
+                  <button onClick={() => handleDeleteUser(emp)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 size={16} /></button>
                 </div>
               </div>
             </Card>
@@ -514,7 +460,7 @@ export default function AdminEmployeesPage() {
         </div>
       )}
 
-      {/* ═══ Create/Edit Modal ═══ */}
+      {/* Create/Edit Modal - (يبقى كما هو دون تغيير) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-4 sm:my-8">
@@ -581,15 +527,12 @@ export default function AdminEmployeesPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold mb-1">المرتبة (Rank)</label>
-                      <select value={formData.rank} onChange={(e) => setFormData({ ...formData, rank: e.target.value })} className="w-full border rounded-xl px-3 py-2 outline-none focus:border-indigo-500" style={{ background: formData.role === 'admin' ? '#fef3c7' : formData.role === 'manager' ? '#dbeafe' : formData.role === 'supervisor' ? '#d1fae5' : 'white' }}>
+                      <select value={formData.rank} onChange={(e) => setFormData({ ...formData, rank: e.target.value })} className="w-full border rounded-xl px-3 py-2 outline-none focus:border-indigo-500">
                         <option value="employee">موظف</option>
                         <option value="supervisor">مشرف قسم</option>
                         <option value="manager">مدير قسم</option>
                         <option value="executive">مدير تنفيذي</option>
                       </select>
-                      {formData.role === 'admin' && formData.rank !== 'executive' && (<p className="text-xs text-amber-600 font-bold mt-1">⚠️ يجب أن تكون مرتبة مدير النظام "مدير تنفيذي"</p>)}
-                      {formData.role === 'manager' && formData.rank !== 'manager' && (<p className="text-xs text-blue-600 font-bold mt-1">⚠️ يجب أن تكون مرتبة مدير القسم "مدير قسم"</p>)}
-                      {formData.role === 'supervisor' && formData.rank !== 'supervisor' && (<p className="text-xs text-emerald-600 font-bold mt-1">⚠️ يجب أن تكون مرتبة المشرف "مشرف قسم"</p>)}
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-1">الدور (Role)</label>
@@ -715,7 +658,7 @@ export default function AdminEmployeesPage() {
         </div>
       )}
 
-      {/* ═══ View Modal ═══ */}
+      {/* View Modal */}
       {isViewModalOpen && selectedEmp && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl p-4 sm:p-6 my-4 sm:my-8">
@@ -723,7 +666,6 @@ export default function AdminEmployeesPage() {
               <h3 className="font-bold text-lg sm:text-xl">الملف الشخصي</h3>
               <div className="flex gap-2 flex-shrink-0">
                 <button onClick={() => openEditModal(selectedEmp)} className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-semibold text-sm flex items-center gap-1"><Edit2 size={16} /> تعديل</button>
-                <button onClick={() => { setIsViewModalOpen(false); handleDeleteAuthUser(selectedEmp.id, selectedEmp.email); }} className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-semibold text-sm flex items-center gap-1"><Trash2 size={16} /> حذف</button>
                 <button onClick={() => setIsViewModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
               </div>
             </div>

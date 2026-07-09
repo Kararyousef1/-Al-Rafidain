@@ -6,13 +6,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, Plus, Loader2, Eye, Star, Target, Calendar } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { performanceCycleService, performanceReviewService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { PerformanceCycle, PerformanceReview } from '../../types/hrModules';
-import { REVIEW_STATUS_LABELS } from '../../types/hrModules';
+import type { PerformanceCycle, PerformanceReview } from '../../shared/types/hrModules';
+import { REVIEW_STATUS_LABELS } from '../../shared/types/hrModules';
 import { Modal, FormField, ModalActions, EmployeePicker } from './LoansPage';
 
 export default function PerformancePage() {
@@ -40,14 +40,22 @@ export default function PerformancePage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: c }, { data: r }] = await Promise.all([
-        supabase.from('performance_cycles').select('*').order('created_at', { ascending: false }),
-        supabase.from('performance_reviews')
-          .select(`*, employees!inner(full_name_ar), performance_cycles(name)`)
-          .order('created_at', { ascending: false }),
+      const [c, r] = await Promise.all([
+        performanceCycleService.findAllCycles(),
+        performanceReviewService.findAllReviews(),
       ]);
-      setCycles((c || []) as PerformanceCycle[]);
-      setReviews((r || []) as unknown as PerformanceReview[]);
+      // Enrich reviews with employee and cycle names
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const cycles = (c || []) as PerformanceCycle[];
+      const cycleNameMap = new Map(cycles.map((cy: any) => [cy.id, cy]));
+      const enriched = (r || []).map((review: any) => ({
+        ...review,
+        employees: empMap.get(review.employee_id) || null,
+        performance_cycles: cycleNameMap.get(review.cycle_id) || null,
+      }));
+      setCycles(cycles);
+      setReviews(enriched as unknown as PerformanceReview[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -60,8 +68,7 @@ export default function PerformancePage() {
   const handleCreateCycle = async () => {
     if (!cycleForm.name) { addToast('يرجى إدخال الاسم', 'warning'); return; }
     try {
-      const { error } = await supabase.from('performance_cycles').insert({ ...cycleForm, status: 'draft' });
-      if (error) throw error;
+      await performanceCycleService.createCycle({ ...cycleForm, status: 'draft' } as unknown as Record<string, unknown>);
       addToast('تم إنشاء دورة التقييم', 'success');
       setShowCreateCycle(false);
       setCycleForm({ name: '', description: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: format(new Date(new Date().setMonth(new Date().getMonth() + 3)), 'yyyy-MM-dd'), review_period: 'quarterly' });
@@ -77,7 +84,7 @@ export default function PerformancePage() {
       return;
     }
     try {
-      const { error } = await supabase.from('performance_reviews').insert({
+      await performanceReviewService.createReview({
         cycle_id: reviewForm.cycle_id,
         employee_id: reviewForm.employee_id,
         reviewer_id: reviewForm.reviewer_id,
@@ -87,8 +94,7 @@ export default function PerformancePage() {
         comments: reviewForm.comments,
         status: 'submitted',
         submitted_at: new Date().toISOString(),
-      });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       addToast('تم إنشاء التقييم', 'success');
       setShowCreateReview(false);
       setReviewForm({ cycle_id: '', employee_id: '', reviewer_id: '', overall_score: 75, strengths: '', improvements: '', comments: '' });
@@ -100,9 +106,7 @@ export default function PerformancePage() {
 
   const handleCompleteReview = async (review: PerformanceReview) => {
     try {
-      const { error } = await supabase.from('performance_reviews')
-        .update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', review.id);
-      if (error) throw error;
+      await performanceReviewService.updateReviewStatus(review.id, 'completed');
       addToast('تم إكمال التقييم', 'success');
       await fetchData();
     } catch (err) {

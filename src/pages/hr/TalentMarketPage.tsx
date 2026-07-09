@@ -19,12 +19,12 @@ import {
   Mail, Phone, User, GraduationCap, Languages, Smile, X,
   FileText, LayoutTemplate,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { supabase } from '../../services/supabase/supabase';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
+import { useUIStore } from '../../core/stores';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع بيانات السيرة الذاتية (تحلّ محل any)

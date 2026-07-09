@@ -23,11 +23,13 @@ import {
   FileText, Zap, Flame, BookOpen, Brain,
   BarChart3, Target,
 } from 'lucide-react';
-import { useAuthStore, useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { incidentService } from '../../services/sdk/IncidentService';
+import { wellnessService } from '../../services/sdk/WellnessService';
+import { attendanceSummaryService } from '../../services/sdk/AttendanceService';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
 import { format, subDays } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import {
@@ -35,7 +37,7 @@ import {
   ResponsiveContainer, BarChart, Bar,
 } from 'recharts';
 import type { LucideIcon } from 'lucide-react';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات
@@ -131,15 +133,20 @@ export default function EmployeeDashboard() {
   const fetchDashboardData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [problemsRes, wellnessRes, attendanceRes] = await Promise.all([
-        supabase.from('incidents').select('*').eq('employee_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('wellness_log').select('*').eq('employee_id', user.id).order('date', { ascending: false }).limit(30),
-        supabase.from('attendance_summary').select('*').eq('employee_id', user.id).order('shift_date', { ascending: false }).limit(30),
+      const [problems, wellness, attendance] = await Promise.all([
+        incidentService.findByEmployee(user.id),
+        wellnessService.findByEmployee(user.id, 30),
+        attendanceSummaryService.findAll({
+          filters: { employee_id: user.id },
+          orderBy: 'shift_date',
+          ascending: false,
+          limit: 30,
+        }),
       ]);
 
-      const problems = (problemsRes.data || []) as Problem[];
-      const wellness = (wellnessRes.data || []) as WellnessEntry[];
-      const attendance = (attendanceRes.data || []) as AttendanceRecord[];
+      const problemsList = (problems || []) as Problem[];
+      const wellnessList = (wellness || []) as WellnessEntry[];
+      const attendanceList = (attendance || []) as AttendanceRecord[];
 
       setRecentProblems(problems.slice(0, 5));
 

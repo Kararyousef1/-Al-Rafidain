@@ -1,8 +1,8 @@
 import { Shield, Search, Loader } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
+import { auditLogService, AuditLogRecord } from '../../services/sdk';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
@@ -26,12 +26,9 @@ export default function AuditLogPage() {
   useEffect(() => {
     const fetchLogs = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('audit_logs')
-        .select('*, profiles:actor_id(full_name, email)')
-        .order('timestamp', { ascending: false });
+      const data = await auditLogService.findAllWithProfiles();
 
-      if (!error && data) {
+      if (data) {
         setAuditLogs(data.map((d: any) => ({
           ...d,
           actor: d.profiles ? (d.profiles.full_name || 'مستخدم بدون اسم') : 'نظام',

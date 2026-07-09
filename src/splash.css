@@ -1,0 +1,51 @@
+/* KOFRX Splash قبل تحميل React */
+html {
+  font-family: 'Tajawal', 'Cairo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+body {
+  margin: 0;
+  background-color: #0a0e27;
+}
+#root:empty::before {
+  content: 'KOFRX';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 5rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  background: linear-gradient(135deg, #ffffff 0%, #00d4ff 50%, #0066ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 40px rgba(0,212,255,0.5), 0 0 80px rgba(0,102,255,0.3);
+  animation: kofrx-glow 3s ease-in-out infinite;
+}
+#root:empty::after {
+  content: '';
+  position: fixed;
+  top: calc(50% + 60px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, #0066ff 50%, transparent 100%);
+  box-shadow: 0 0 10px #0066ff, 0 0 20px rgba(0,102,255,0.5);
+  animation: kofrx-line 2s ease-in-out infinite;
+}
+@keyframes kofrx-glow {
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 20px rgba(0,212,255,0.6)); }
+  50% { filter: brightness(1.3) drop-shadow(0 0 40px rgba(0,212,255,0.9)); }
+}
+@keyframes kofrx-line {
+  0%, 100% { width: 200px; opacity: 0.6; }
+  50% { width: 350px; opacity: 1; }
+}
+@media (max-width: 768px) {
+  #root:empty::before { font-size: 3rem; }
+}
+@media (max-width: 480px) {
+  #root:empty::before { font-size: 2.5rem; }
+}

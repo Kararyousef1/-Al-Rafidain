@@ -24,8 +24,8 @@ import {
   hasSeenWelcome,
   markWelcomeSeen,
   clearAllNotificationData,
-} from '../lib/notificationManager';
-import type { AppNotification } from '../constants/notificationTypes';
+} from '../services/notifications/notificationManager';
+import type { AppNotification } from '../core/constants/notificationTypes';
 
 const USER_1 = 'user-123';
 const USER_2 = 'user-456';

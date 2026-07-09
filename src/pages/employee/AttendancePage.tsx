@@ -3,12 +3,12 @@ import {
   Clock, Calendar, Loader,
   ChevronRight, ChevronLeft
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
+import { supabase } from '../../services/supabase/supabase';
+import { useAuthStore } from '../../core/stores';
 import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import { useUIStore } from '../../store';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import { useUIStore } from '../../core/stores';
 import {
   determineShift, calculateLateMinutes,
   calculateTotalHours, STATUS_COLORS, STATUS_LABELS,

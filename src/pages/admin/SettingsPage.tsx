@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Save, Bell, Lock, Globe, Mail, Shield } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import { useUIStore } from '../../store';
-import { fetchGeneralSettings, saveGeneralSettings } from '../../sdk/settings';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import { useUIStore } from '../../core/stores';
+import { settingsService } from '../../services/sdk/SettingsService';
 
 export default function SettingsPage() {
   const { addToast } = useUIStore();
@@ -22,16 +22,19 @@ export default function SettingsPage() {
     maintenanceMode: false,
   });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const savedSettings = await fetchGeneralSettings();
+        const savedSettings = await settingsService.findGeneralSettings();
         if (savedSettings) {
           setSettings(prev => ({ ...prev, ...savedSettings }));
         }
       } catch (err) {
         console.error('Error loading settings:', err);
+      } finally {
+        setLoading(false);
       }
     };
     loadSettings();
@@ -40,7 +43,7 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveGeneralSettings(settings);
+      await settingsService.updateGeneralSettings(settings as unknown as Record<string, unknown>);
       addToast('تم حفظ الإعدادات بنجاح ✅', 'success');
     } catch (err) {
       console.error(err);
@@ -68,6 +71,14 @@ export default function SettingsPage() {
       </button>
     </div>
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <p className="text-slate-500">جاري التحميل...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">

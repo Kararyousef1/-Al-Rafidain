@@ -3,11 +3,11 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Receipt, Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
-import type { ExpenseRequest, ExpenseStatus } from '../../types/hrModules';
-import { EXPENSE_STATUS_LABELS } from '../../types/hrModules';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import { expenseRequestService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
+import type { ExpenseRequest, ExpenseStatus } from '../../shared/types/hrModules';
+import { EXPENSE_STATUS_LABELS } from '../../shared/types/hrModules';
 import { formatCurrency } from '../../utils/payrollUtils';
 
 export default function ExpensesPage() {
@@ -20,12 +20,11 @@ export default function ExpensesPage() {
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('expense_requests')
-        .select(`*, employees!inner(full_name_ar, employee_code)`)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setExpenses((data || []) as unknown as ExpenseRequest[]);
+      const data = await expenseRequestService.findAll({ orderBy: 'created_at', ascending: false });
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (data || []).map((e: any) => ({ ...e, employees: empMap.get(e.employee_id) || null }));
+      setExpenses(enriched as unknown as ExpenseRequest[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -38,11 +37,7 @@ export default function ExpensesPage() {
   const handleApprove = async (expense: ExpenseRequest) => {
     try {
       // ربط الموافقة بالمستخدم الحالي (HR) وليس موظف عشوائي
-      const currentEmployeeId = user?.employee_id || user?.id;
-      const { error } = await supabase.from('expense_requests')
-        .update({ status: 'approved', approved_by: currentEmployeeId, approved_at: new Date().toISOString() })
-        .eq('id', expense.id);
-      if (error) throw error;
+      await expenseRequestService.approveRequest(expense.id, user?.id || '');
       addToast('تمت الموافقة', 'success');
       await fetchExpenses();
     } catch (err) {
@@ -54,9 +49,7 @@ export default function ExpensesPage() {
     const reason = prompt('سبب الرفض:');
     if (reason === null) return;
     try {
-      const { error } = await supabase.from('expense_requests')
-        .update({ status: 'rejected', rejection_reason: reason }).eq('id', expense.id);
-      if (error) throw error;
+      await expenseRequestService.rejectRequest(expense.id, reason);
       addToast('تم الرفض', 'success');
       await fetchExpenses();
     } catch (err) {

@@ -22,11 +22,12 @@ import {
   ArrowUp, ArrowDown, Minus, Loader2, X, Brain,
   Sparkles, UserCheck,
 } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import { getErrorMessage } from '../../lib/errors';
+import type { LucideIcon } from 'lucide-react';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import { useUIStore } from '../../core/stores';
+import { courseService, courseProgressService, employeeService, departmentService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart as RePie, Pie, Cell,
@@ -124,7 +125,7 @@ interface TooltipProps {
   label?: string;
 }
 
-type IconType = React.ComponentType<{ size?: number; className?: string }>;
+type IconType = LucideIcon;
 
 interface KpiCard {
   val: number | string;
@@ -274,15 +275,12 @@ export default function TrainingReportsPage() {
       setLoading(true);
       setError(null);
       try {
-        const { data: coursesData, error: coursesError } = await supabase.from('courses').select('*').order('created_at', { ascending: false });
-        if (coursesError) throw coursesError;
-        const { data: progressData, error: progressError } = await supabase.from('course_progress').select('*');
-        if (progressError) throw progressError;
-        const { data: profilesData, error: profilesError } = await supabase.from('employees').select('id, full_name_ar, email, department_id, role');
-        if (profilesError) throw profilesError;
-        // جلب أسماء الأقسام
-        const { data: depts } = await supabase.from('departments').select('id, name_ar');
-        const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
+      const coursesData = await courseService.findAllCourses();
+      const progressData = await courseProgressService.findAllProgress();
+      const profilesData = await employeeService.findAll();
+      // جلب أسماء الأقسام
+      const depts = await departmentService.findAll({ orderBy: 'name_ar' });
+      const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
         const normalizedProfiles: ProfileDB[] = (profilesData as any[] || []).map((e) => ({
           id: e.id,
           full_name: e.full_name_ar || '',

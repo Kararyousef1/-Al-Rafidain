@@ -6,10 +6,10 @@ import {
   Calendar, ChevronDown, ChevronUp, Copy, GripVertical,
   ArrowUp, ArrowDown, Globe, Check, Layers
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
-import type { SOP, SOPStatus } from '../../types/sops';
-import { SOP_DEPARTMENTS, SOP_CATEGORIES } from '../../types/sops';
+import { supabase } from '../../services/supabase/supabase';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import type { SOP, SOPStatus } from '../../shared/types/sops';
+import { SOP_DEPARTMENTS, SOP_CATEGORIES } from '../../shared/types/sops';
 
 // ── Helpers ──
 const generateId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;

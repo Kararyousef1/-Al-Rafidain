@@ -10,8 +10,8 @@ import {
   getUserInitial,
   getUserRole,
   getUserPosition,
-} from '../lib/utils';
-import type { User } from '../types';
+} from '../services/utils';
+import type { User } from '../../shared/types';
 
 const mockUser: User = {
   id: '123',

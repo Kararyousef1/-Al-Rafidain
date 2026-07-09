@@ -15,24 +15,25 @@
  *  ════════════════════════════════════════════════════════════════
  */
 
-import { useEffect, Suspense, lazy, useState } from 'react';
-import { useAuthStore, useUIStore } from './store';
-import ToastContainer from './components/ui/Toast';
-import SplashScreen from './components/ui/SplashScreen';
-import Sidebar from './components/dashboard/Sidebar';
-import Header from './components/dashboard/Header';
+import { useEffect, Suspense, lazy, useState, useRef } from 'react';
+import { useAuthStore, useUIStore } from './core/stores';
+import { TenantProvider, useTenant } from './core/tenant/TenantContext';
+import ToastContainer from './shared/components/ui/Toast';
+import SplashScreen from './shared/components/ui/SplashScreen';
+import Sidebar from './shared/components/dashboard/Sidebar';
+import Header from './shared/components/dashboard/Header';
 import LoginPage from './pages/auth/LoginPage';
 import LandingPage from './pages/public/LandingPage';
 import DisclaimerPage from './pages/public/DisclaimerPage';
 import SystemGuide from './pages/public/SystemGuide';
 import NotificationsPage from './pages/public/NotificationsPage';
 import MyNotificationsPage from './pages/public/MyNotificationsPage';
-import WelcomeModal from './components/dashboard/WelcomeModal';
+import WelcomeModal from './shared/components/dashboard/WelcomeModal';
 
 // ─── Lazy Imports: Developer ─────────────────────────────────────
-const StructureManager   = lazy(() => import('./components/dashboard/developer').then(m => ({ default: m.StructureManager })));
-const BiometricPage      = lazy(() => import('./components/dashboard/developer').then(m => ({ default: m.BiometricSettings })));
-const DeveloperDashboard = lazy(() => import('./components/dashboard/DeveloperDashboard'));
+const StructureManager   = lazy(() => import('./shared/components/dashboard/developer').then(m => ({ default: m.StructureManager })));
+const BiometricPage      = lazy(() => import('./shared/components/dashboard/developer').then(m => ({ default: m.BiometricSettings })));
+const DeveloperDashboard = lazy(() => import('./shared/components/dashboard/DeveloperDashboard'));
 
 // ─── Lazy Imports: Employee ──────────────────────────────────────
 const EmployeeDashboard  = lazy(() => import('./pages/employee/EmployeeDashboard'));
@@ -65,6 +66,17 @@ const KioskPage                = lazy(() => import('./pages/hr/KioskPage'));
 const HRMovementAnalyticsPage  = lazy(() => import('./pages/hr/HRMovementAnalyticsPage'));
 const TrainingManagementPage   = lazy(() => import('./pages/hr/TrainingManagementPage'));
 const TrainingReportsPage      = lazy(() => import('./pages/hr/TrainingReportsPage'));
+const HRPayrollPage            = lazy(() => import('./pages/hr/PayrollPage'));
+const HRLoansPage              = lazy(() => import('./pages/hr/LoansPage'));
+const HRBonusesPage            = lazy(() => import('./pages/hr/BonusesPage'));
+const HRExpensesPage           = lazy(() => import('./pages/hr/ExpensesPage'));
+const RecruitmentPage          = lazy(() => import('./pages/hr/RecruitmentPage'));
+const OnboardingPage           = lazy(() => import('./pages/hr/OnboardingPage'));
+const DocumentsPage            = lazy(() => import('./pages/hr/DocumentsPage'));
+const PerformancePage          = lazy(() => import('./pages/hr/PerformancePage'));
+const DisciplinaryPage         = lazy(() => import('./pages/hr/DisciplinaryPage'));
+const ShiftSchedulingPage      = lazy(() => import('./pages/hr/ShiftSchedulingPage'));
+const HRCommunicationPage      = lazy(() => import('./pages/hr/HRCommunicationPage'));
 
 // ─── Lazy Imports: Admin ─────────────────────────────────────────
 const AdminDashboard              = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -98,12 +110,16 @@ const ROLE_DEFAULT_VIEW: Record<string, string> = {
 };
 
 // صفحات تظهر في أدوار متعددة — تحديدها مسبقاً يُقلل تكرار switch
+// ملاحظة: هذه تُستخدم فقط للموظفين والمديرين والمشرفين
+// صفحات HR لها مسارات خاصة تبدأ بـ hr- ويتم التعامل معها في switch
 const SHARED_PAGE: Record<string, JSX.Element> = {
-  'leave-requests':  <LeaveRequestPage />,
-  'permissions':     <PermissionsPage />,
-  'payroll':         <MyPayrollPage />,
-  'loans':           <MyLoansPage />,
-  'expenses':        <MyExpensesPage />,
+  'employee-leave-requests':  <LeaveRequestPage />,
+  'employee-permissions':     <PermissionsPage />,
+  'employee-payroll':         <MyPayrollPage />,
+  'employee-loans':           <MyLoansPage />,
+  'employee-expenses':        <MyExpensesPage />,
+  'manager-leave-requests':   <LeaveRequestPage />,
+  'supervisor-leave-requests':<LeaveRequestPage />,
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -146,10 +162,9 @@ function PageRenderer() {
       return <ProblemDetail problemId={id} />;
     }
 
-    // صفحات مشتركة بين أدوار (employee / manager / hr / supervisor)
-    for (const suffix of Object.keys(SHARED_PAGE)) {
-      if (activeView.endsWith(`-${suffix}`)) return SHARED_PAGE[suffix];
-    }
+    // صفحات مشتركة بين أدوار (employee / manager / supervisor)
+    // التحقق بالمطابقة التامة لتجنب تداخل مع مسارات hr-
+    if (SHARED_PAGE[activeView]) return SHARED_PAGE[activeView];
 
     switch (activeView) {
       // ─── إشعارات ────────────────────────────────────────────
@@ -168,6 +183,14 @@ function PageRenderer() {
       case 'employee-profile':    return <ProfilePage />;
       case 'employee-contact':    return <ContactPage />;
       case 'employee-attendance': return <MyAttendancePage />;
+      case 'employee-requests':   return <LeaveRequestPage />;
+      case 'employee-leave-requests': return <LeaveRequestPage />;
+      case 'employee-permissions':    return <PermissionsPage />;
+      case 'employee-payroll':    return <MyPayrollPage />;
+      case 'employee-loans':      return <MyLoansPage />;
+      case 'employee-expenses':   return <MyExpensesPage />;
+      case 'employee-ai-insights': return <AIInsightsDashboard />;
+      case 'insights':            return <AIInsightsDashboard />;
 
       // ─── Kiosk ───────────────────────────────────────────────
       case 'kiosk-mode':          return <KioskPage />;
@@ -185,13 +208,29 @@ function PageRenderer() {
       case 'hr-team':             return <TeamPage />;
       case 'hr-talent-market':    return <TalentMarketPage />;
       case 'hr-attendance':       return <AttendancePage />;
-      case 'hr-communication':    return <ContactPage />;
+      case 'hr-communication':    return <HRCommunicationPage />;
       case 'hr-reports':          return <ReportsPage />;
       case 'hr-movement-analysis':return <HRMovementAnalyticsPage />;
       case 'hr-manage-training':  return <TrainingManagementPage />;
       case 'hr-training-reports': return <TrainingReportsPage />;
       case 'admin-ai-insights':
       case 'hr-ai-insights':      return <AIInsightsDashboard />;
+      // ─── HR Finance ──────────────────────────────────────────
+      case 'hr-payroll':          return <HRPayrollPage />;
+      case 'hr-loans':            return <HRLoansPage />;
+      case 'hr-bonuses':          return <HRBonusesPage />;
+      case 'hr-expenses':         return <HRExpensesPage />;
+      // ─── HR People ───────────────────────────────────────────
+      case 'hr-recruitment':      return <RecruitmentPage />;
+      case 'hr-onboarding':       return <OnboardingPage />;
+      case 'hr-documents':        return <DocumentsPage />;
+      // ─── HR Performance ──────────────────────────────────────
+      case 'hr-performance':      return <PerformancePage />;
+      case 'hr-disciplinary':     return <DisciplinaryPage />;
+      case 'hr-shifts':           return <ShiftSchedulingPage />;
+      // ─── HR Surveys ──────────────────────────────────────────
+      case 'hr-manage-surveys':   return <SurveyPage />;
+      case 'hr-sops':             return <AdminSOPsPage />;
 
       // ─── Gatekeeper / Movements ──────────────────────────────
       case 'gatekeeper':
@@ -246,6 +285,7 @@ export default function App() {
   const { setActiveView, sidebarOpen, setSidebarOpen } = useUIStore();
   const [showLogin, setShowLogin]       = useState(false);
   const [authTimedOut, setAuthTimedOut] = useState(false);
+  const initializedRef = useRef(false);
 
   // ✅ localStorage — يُحفَظ عبر الجلسات
   const [disclaimerPassed, setDisclaimerPassed] = useState(
@@ -260,9 +300,17 @@ export default function App() {
   // ✅ Initialize + Timeout (10 ثواني)
   useEffect(() => {
     if (isPreviewMode) return;
+
+    // منع التكرار في StrictMode (React 18)
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     initialize();
     const timeout = setTimeout(() => {
-      if (loading) setAuthTimedOut(true);
+      // نتحقق من loading الحالي عبر useAuthStore.getState()
+      // لتجنب مشكلة closure حيث تبقى القيمة القديمة
+      const { loading: currentLoading } = useAuthStore.getState();
+      if (currentLoading) setAuthTimedOut(true);
     }, 10_000);
     return () => clearTimeout(timeout);
   }, [isPreviewMode, initialize]);
@@ -293,9 +341,29 @@ export default function App() {
     setActiveView(ROLE_DEFAULT_VIEW[user.role] ?? 'employee-dashboard');
   }, [user?.role, setActiveView]);
 
+  // ✅ استماع لحدث popstate (زر الرجوع في المتصفح)
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as { activeView?: string; loginPage?: boolean } | null;
+      if (state?.loginPage === false || state === null) {
+        setShowLogin(false);
+      }
+      if (state?.activeView) {
+        setActiveView(state.activeView);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [setActiveView]);
+
   // ─── Render Guards ───────────────────────────────────────────
   if (isPreviewMode) {
-    return <><LandingPage onLoginClick={() => {}} /><ToastContainer /></>;
+    return (
+      <TenantProvider>
+        <LandingPage onLoginClick={() => {}} />
+        <ToastContainer />
+      </TenantProvider>
+    );
   }
 
   if (loading) {
@@ -325,8 +393,14 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    if (showLogin) return <><LoginPage onNavigate={() => {}} /><ToastContainer /></>;
-    return <><LandingPage onLoginClick={() => setShowLogin(true)} /><ToastContainer /></>;
+    if (showLogin) return <><LoginPage onNavigate={() => {}} onBack={() => {
+      window.history.back();
+      setShowLogin(false);
+    }} /><ToastContainer /></>;
+    return <><LandingPage onLoginClick={() => {
+      window.history.pushState({ loginPage: true }, '');
+      setShowLogin(true);
+    }} /><ToastContainer /></>;
   }
 
   // ─── Main App ────────────────────────────────────────────────

@@ -16,7 +16,7 @@
  *  ════════════════════════════════════════════════════════════════
  */
 
-import type { User, UserRole } from '../types';
+import type { User, UserRole } from '../../shared/types';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات الخام (تحلّ محل any)
@@ -82,6 +82,8 @@ export interface RawUserData {
   wellness_score?: number;
   problemsCount?: number;
   problems_count?: number;
+  // Multi-Tenant
+  tenant_id?: string;
   // بيانات إضافية
   cv_data?: unknown;
   // علاقات
@@ -150,6 +152,9 @@ export function normalizeUser(data: RawUserData | null | undefined): User {
     gatekeeper_type: data.gatekeeper_type as User['gatekeeper_type'],
     gatekeeper_pin: data.gatekeeper_pin,
     passcode: data.passcode,
+
+    // Multi-Tenant
+    tenant_id: data.tenant_id,
 
     // الإحصائيات
     wellnessScore: data.wellnessScore || data.wellness_score || 0,

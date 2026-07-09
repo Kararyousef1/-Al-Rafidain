@@ -16,11 +16,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Clock, FileText, Send, CheckCircle, XCircle, Loader, Search, Filter } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore, useUIStore } from '../../store';
-import { notifyUser, notifyRole } from '../../lib/notificationService';
-import { addNotification } from '../../lib/notificationManager';
-import { getErrorMessage } from '../../lib/errors';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { employeeService, permissionRequestService } from '../../services/sdk';
+import { notifyUser, notifyRole } from '../../services/notifications/notificationService';
+import { addNotification } from '../../services/notifications/notificationManager';
+import { getErrorMessage } from '../../services/errors';
 import { PermissionType, PERMISSION_TYPE_COLORS } from '../../utils/shiftUtils';
 
 // ════════════════════════════════════════════════════
@@ -95,15 +95,16 @@ export default function PermissionsPage() {
 
   useEffect(() => {
     if (!user?.id) return;
-    supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle()
-      .then(({ data }) => { if (data) setEmployeeId((data as { id: string }).id); });
+    (async () => {
+      const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+      if (employees.length > 0) setEmployeeId(employees[0].id);
+    })();
   }, [user]);
 
   const fetchPermissions = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('permissions_request').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
+      const data = await permissionRequestService.findAll({ orderBy: 'created_at', ascending: false });
       setPermissions((data as Permission[]) || []);
     } catch (err) {
       const msg = getErrorMessage(err);
@@ -122,14 +123,14 @@ export default function PermissionsPage() {
     try {
       let targetId = employeeId;
       if (!targetId) {
-        const { data: emp } = await supabase.from('employees').select('id').eq('user_id', user.id).maybeSingle();
-        if (emp) {
-          targetId = (emp as { id: string }).id;
+        const employees = await employeeService.findAll({ filters: { user_id: user.id }, limit: 1 });
+        if (employees.length > 0) {
+          targetId = employees[0].id;
           setEmployeeId(targetId);
         }
       }
 
-      const { error } = await supabase.from('permissions_request').insert({
+      await permissionRequestService.createRequest({
         employee_id: targetId || user.id,
         employee_name: user.full_name || 'موظف',
         employee_department: user.department || null,
@@ -138,9 +139,7 @@ export default function PermissionsPage() {
         expected_out_time: formData.expected_out_time,
         expected_return_time: formData.permission_type === 'مغادرة' ? null : formData.expected_return_time,
         reason: formData.reason,
-        status: 'انتظار',
       });
-      if (error) throw error;
 
       // إشعار للمدير المباشر أو HR
       const managerId = user.manager_id || null;
@@ -186,11 +185,10 @@ export default function PermissionsPage() {
     if (!user) return;
     setProcessingId(id);
     try {
-      const { data: perm } = await supabase.from('permissions_request').select('employee_id, employee_name, permission_type').eq('id', id).single();
+      const perm = await permissionRequestService.findById(id) as { employee_id: string; employee_name: string; permission_type: PermissionType } | null;
       if (!perm) throw new Error('الطلب غير موجود');
 
-      const { error } = await supabase.from('permissions_request').update({ status: 'موافق', approved_by: employeeId || user.id, reviewed_at: new Date().toISOString() }).eq('id', id);
-      if (error) throw error;
+      await permissionRequestService.approveRequest(id, employeeId || user?.id || '');
 
       const permData = perm as { employee_id: string; permission_type: PermissionType };
       if (permData.employee_id) {
@@ -212,11 +210,10 @@ export default function PermissionsPage() {
     if (!user || !rejectingId || !rejectionReason.trim()) { addToast('⚠️ يرجى إدخال سبب الرفض', 'warning'); return; }
     setProcessingId(rejectingId);
     try {
-      const { data: perm } = await supabase.from('permissions_request').select('employee_id, permission_type').eq('id', rejectingId).single();
+      const perm = await permissionRequestService.findById(rejectingId) as { employee_id: string; permission_type: PermissionType } | null;
       if (!perm) throw new Error('الطلب غير موجود');
 
-      const { error } = await supabase.from('permissions_request').update({ status: 'مرفوض', rejection_reason: rejectionReason, reviewed_at: new Date().toISOString() }).eq('id', rejectingId);
-      if (error) throw error;
+      await permissionRequestService.rejectRequest(rejectingId, user?.id || '', rejectionReason);
 
       const permData = perm as { employee_id: string; permission_type: PermissionType };
       if (permData.employee_id) {

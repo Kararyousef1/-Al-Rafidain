@@ -10,12 +10,12 @@ import {
   DollarSign, Calendar, Plus, Loader2, FileText, CheckCircle,
   XCircle, Eye, Play, TrendingUp, Users,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { payrollPeriodService, payrollRecordService, payrollSettingService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { PayrollPeriod, PayrollRecord, PayrollStatus } from '../../types/payroll';
+import type { PayrollPeriod, PayrollRecord, PayrollStatus } from '../../shared/types/payroll';
 import {
   PAYROLL_STATUS_LABELS, PAYROLL_STATUS_COLORS, PAYROLL_FREQUENCY_LABELS,
   formatCurrency,
@@ -45,12 +45,7 @@ export default function PayrollPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('payroll_periods')
-        .select('*')
-        .order('start_date', { ascending: false });
-
-      if (error) throw error;
+      const data = await payrollPeriodService.findAllPeriods();
       setPeriods((data || []) as PayrollPeriod[]);
 
       if ((data || []).length > 0 && !selectedPeriod) {
@@ -66,17 +61,11 @@ export default function PayrollPage() {
   const fetchRecords = useCallback(async () => {
     if (!selectedPeriod) return;
     try {
-      const { data, error } = await supabase
-        .from('payroll_records')
-        .select(`
-          *,
-          employees!inner(employee_code, full_name_ar, department_id)
-        `)
-        .eq('period_id', selectedPeriod)
-        .order('net_salary', { ascending: false });
-
-      if (error) throw error;
-      setRecords((data || []) as unknown as PayrollRecord[]);
+      const data = await payrollRecordService.findByPeriod(selectedPeriod);
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (data || []).map((r: any) => ({ ...r, employees: empMap.get(r.employee_id) || null }));
+      setRecords(enriched as unknown as PayrollRecord[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     }
@@ -93,11 +82,7 @@ export default function PayrollPage() {
     }
     setRunning(true);
     try {
-      const { error } = await supabase.from('payroll_periods').insert({
-        ...formData,
-        status: 'draft',
-      });
-      if (error) throw error;
+      await payrollPeriodService.createPeriod({ ...formData, status: 'draft' } as unknown as Record<string, unknown>);
       addToast('تم إنشاء فترة الرواتب بنجاح', 'success');
       setShowCreateModal(false);
       setFormData({
@@ -120,14 +105,9 @@ export default function PayrollPage() {
     setRunning(true);
     try {
       // جلب الموظفين النشطين
-      const { data: employees, error: empErr } = await supabase
-        .from('employees')
-        .select('id, base_salary, salary')
-        .eq('is_active', true);
+      const employees = await employeeService.findAll({ filters: { is_active: true } });
 
-      if (empErr) throw empErr;
-
-      const recordsToInsert = (employees || []).map((emp: { id: string; base_salary: number | null; salary: number | null }) => ({
+      const recordsToInsert = (employees || []).map((emp: any) => ({
         period_id: period.id,
         employee_id: emp.id,
         basic_salary: emp.base_salary || emp.salary || 0,
@@ -145,18 +125,11 @@ export default function PayrollPage() {
       }));
 
       if (recordsToInsert.length > 0) {
-        const { error: insertErr } = await supabase
-          .from('payroll_records')
-          .upsert(recordsToInsert, { onConflict: 'employee_id,period_id', ignoreDuplicates: false });
-
-        if (insertErr) throw insertErr;
+        await payrollRecordService.upsertRecords(recordsToInsert);
       }
 
       // تحديث حالة الفترة
-      await supabase
-        .from('payroll_periods')
-        .update({ status: 'pending_approval' })
-        .eq('id', period.id);
+      await payrollPeriodService.updatePeriodStatus(period.id, 'pending_approval');
 
       addToast(`تم تشغيل الرواتب لـ ${recordsToInsert.length} موظف`, 'success');
       await fetchData();
@@ -171,15 +144,8 @@ export default function PayrollPage() {
   const handleApprovePeriod = async (period: PayrollPeriod) => {
     if (!confirm(`هل تريد اعتماد رواتب الفترة "${period.name}"؟`)) return;
     try {
-      await supabase
-        .from('payroll_periods')
-        .update({ status: 'approved' })
-        .eq('id', period.id);
-
-      await supabase
-        .from('payroll_records')
-        .update({ status: 'approved' })
-        .eq('period_id', period.id);
+      await payrollPeriodService.updatePeriodStatus(period.id, 'approved');
+      await payrollRecordService.updateStatusByPeriod(period.id, 'approved');
 
       addToast('تم اعتماد الرواتب', 'success');
       await fetchData();
@@ -490,8 +456,7 @@ function PayrollSettingsTab() {
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase.from('payroll_settings').select('*').eq('id', 1).single();
-        if (error) throw error;
+        const data = await payrollSettingService.findSettings();
         setSettings(data);
       } catch (err) {
         addToast(getErrorMessage(err), 'error');
@@ -504,7 +469,7 @@ function PayrollSettingsTab() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase.from('payroll_settings').update({
+      await payrollSettingService.updateSettings('1', {
         default_currency: settings.default_currency,
         tax_rate: Number(settings.tax_rate),
         social_security_rate: Number(settings.social_security_rate),
@@ -514,8 +479,7 @@ function PayrollSettingsTab() {
         working_days_per_month: Number(settings.working_days_per_month),
         max_loan_amount: Number(settings.max_loan_amount),
         max_loan_months: Number(settings.max_loan_months),
-      }).eq('id', 1);
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       addToast('تم حفظ الإعدادات', 'success');
     } catch (err) {
       addToast(getErrorMessage(err), 'error');

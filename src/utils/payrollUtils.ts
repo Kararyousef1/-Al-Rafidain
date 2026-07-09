@@ -7,7 +7,7 @@
 import type {
   PayrollRecord, PayrollAllowance, PayrollDeduction,
   PayrollSettings,
-} from '../types/payroll';
+} from '../shared/types/payroll';
 
 // ═══════════════════ إعادة تصدير التسميات والأنواع ═══════════════════
 export {
@@ -17,7 +17,7 @@ export {
   BONUS_TYPE_LABELS,
   PAYROLL_STATUS_LABELS,
   PAYROLL_FREQUENCY_LABELS,
-} from '../types/payroll';
+} from '../shared/types/payroll';
 
 // ═══════════════════ حساب صافي الراتب ═══════════════════
 

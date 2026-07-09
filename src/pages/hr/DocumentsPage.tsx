@@ -3,13 +3,14 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { FileText, Plus, Loader2, Download, Upload, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { supabase } from '../../services/supabase/supabase';
+import { useUIStore } from '../../core/stores';
+import { employeeDocumentService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { EmployeeDocument, DocumentType } from '../../types/hrModules';
-import { DOCUMENT_TYPE_LABELS } from '../../types/hrModules';
+import type { EmployeeDocument, DocumentType } from '../../shared/types/hrModules';
+import { DOCUMENT_TYPE_LABELS } from '../../shared/types/hrModules';
 import { Modal, FormField, ModalActions, EmployeePicker } from './LoansPage';
 
 export default function DocumentsPage() {
@@ -27,12 +28,11 @@ export default function DocumentsPage() {
   const fetchDocs = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('employee_documents')
-        .select(`*, employees!inner(full_name_ar, employee_code)`)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setDocs((data || []) as unknown as EmployeeDocument[]);
+      const data = await employeeDocumentService.findAll({ orderBy: 'created_at', ascending: false });
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (data || []).map((d: any) => ({ ...d, employees: empMap.get(d.employee_id) || null }));
+      setDocs(enriched as unknown as EmployeeDocument[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -70,7 +70,7 @@ export default function DocumentsPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('employee_documents').insert({
+      await employeeDocumentService.createDocument({
         employee_id: form.employee_id,
         document_type: form.document_type,
         title: form.title,
@@ -78,8 +78,7 @@ export default function DocumentsPage() {
         file_url: form.file_url,
         file_name: form.file_name,
         expires_at: form.expires_at || null,
-      });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       addToast('تم رفع المستند بنجاح', 'success');
       setShowCreate(false);
       setForm({ employee_id: '', document_type: 'contract', title: '', description: '', file_url: '', file_name: '', expires_at: '' });
@@ -92,8 +91,7 @@ export default function DocumentsPage() {
   const handleDelete = async (doc: EmployeeDocument) => {
     if (!confirm(`حذف "${doc.title}"؟`)) return;
     try {
-      const { error } = await supabase.from('employee_documents').delete().eq('id', doc.id);
-      if (error) throw error;
+      await employeeDocumentService.deleteDocument(doc.id);
       addToast('تم الحذف', 'success');
       await fetchDocs();
     } catch (err) {

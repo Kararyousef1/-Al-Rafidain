@@ -13,9 +13,9 @@
   "categories": ["business", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     },
     {
@@ -49,21 +49,21 @@
       "short_name": "الرئيسية",
       "description": "فتح لوحة التحكم الرئيسية",
       "url": "/?view=dashboard",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "البلاغات",
       "short_name": "البلاغات",
       "description": "عرض البلاغات والمشاكل",
       "url": "/?view=problems",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "الإشعارات",
       "short_name": "الإشعارات",
       "description": "عرض الإشعارات الأخيرة",
       "url": "/?view=notifications",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

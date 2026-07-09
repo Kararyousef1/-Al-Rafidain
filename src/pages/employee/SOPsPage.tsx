@@ -7,12 +7,12 @@ import {
   AlertTriangle, Loader2,
   Check, Tag,
 } from 'lucide-react';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
-import type { SOP, SOPReading, SOPViewMode } from '../../types/sops';
-import { SOP_DEPARTMENTS, SOP_CATEGORIES } from '../../types/sops';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import { supabase } from '../../services/supabase/supabase';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import type { SOP, SOPReading, SOPViewMode } from '../../shared/types/sops';
+import { SOP_DEPARTMENTS, SOP_CATEGORIES } from '../../shared/types/sops';
 
 // ── Translations ──
 const translations = {

@@ -19,10 +19,10 @@ import {
   Calendar, Clock, User, ThumbsUp, Eye, Bell,
   Target, Plus, AlertCircle, Star,
 } from 'lucide-react';
-import { useAuthStore, useUIStore } from '../../store';
+import { useAuthStore, useUIStore } from '../../core/stores';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import Card from '../../components/ui/Card';
+import Card from '../../shared/components/ui/Card';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات

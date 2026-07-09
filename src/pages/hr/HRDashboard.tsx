@@ -5,11 +5,15 @@ import {
   Loader, TrendingUp, Heart, Zap, RefreshCw, ChevronLeft,
   Bell, Shield, BarChart2
 } from 'lucide-react';
-import { useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
+import { useUIStore } from '../../core/stores';
+import { employeeService } from '../../services/sdk/EmployeeService';
+import { departmentService } from '../../services/sdk/DepartmentService';
+import { incidentService } from '../../services/sdk/IncidentService';
+import { wellnessEntryService } from '../../services/sdk/WellnessService';
+import { reviewService } from '../../services/sdk/ReviewService';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -97,40 +101,26 @@ export default function HRDashboard() {
       let reviews: any[] = [];
       
       try {
-        const res1 = await supabase.from('employees').select('id, full_name_ar, department_id, is_active, status');
-        if (!res1.error && res1.data) {
-          // جلب أسماء الأقسام
-          const { data: depts } = await supabase.from('departments').select('id, name_ar');
-          const deptMap = new Map((depts || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
-          profiles = res1.data.map((e: { id: string; full_name_ar?: string; department_id?: string; is_active?: boolean; status?: string }) => ({
-            ...e,
-            full_name: e.full_name_ar || '',
-            department: deptMap.get(e.department_id || '') || '',
-          }));
-        }
-      } catch (e) {}
-      
-      // Fallback for local users
-      if (profiles.length === 0) {
-        try {
-          const localEmps = JSON.parse(localStorage.getItem('local_employees') || '[]');
-          if (localEmps.length > 0) profiles = localEmps;
-        } catch (e) {}
-      }
-      
-      try {
-        const res2 = await supabase.from('incidents').select('*').order('created_at', { ascending: false });
-        if (!res2.error && res2.data) incidents = res2.data;
+        const empsData = await employeeService.findAll({ filters: { is_active: true } });
+        const deptsData = await departmentService.findAll();
+        const deptMap = new Map((deptsData || []).map((d: { id: string; name_ar: string }) => [d.id, d.name_ar]));
+        profiles = (empsData || []).map((e: any) => ({
+          ...e,
+          full_name: e.full_name_ar || e.full_name || '',
+          department: deptMap.get(e.department_id || '') || '',
+        }));
       } catch (e) {}
       
       try {
-        const res3 = await supabase.from('wellness_entries').select('*').order('date', { ascending: false }).limit(200);
-        if (!res3.error && res3.data) wellness = res3.data;
+        incidents = await incidentService.findAll() || [];
       } catch (e) {}
       
       try {
-        const res4 = await supabase.from('customer_reviews').select('*').order('created_at', { ascending: false }).limit(5);
-        if (!res4.error && res4.data) reviews = res4.data;
+        wellness = await wellnessEntryService.findAllEntries() || [];
+      } catch (e) {}
+      
+      try {
+        reviews = await reviewService.findLatest(5) || [];
       } catch (e) {}
 
       const emps = profiles || [];

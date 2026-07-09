@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { structureDepartmentService, structurePositionService, structureRankService, structureShiftService, structureRoleService } from '../../services/sdk';
 import { Plus, Edit3, Trash2, Save, X, Building2, Briefcase, Shield, Clock, Layers, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useUIStore } from '../../store';
-import Card from '../../components/ui/Card';
+import { useUIStore } from '../../core/stores';
+import Card from '../../shared/components/ui/Card';
 
 interface Dept { id: number; name_ar: string; name_en: string; code: string; is_active: boolean; sort_order: number; }
 interface Pos { id: number; name_ar: string; name_en: string; department_id: number; is_active: boolean; }
@@ -36,19 +36,27 @@ export default function StructureManager() {
   const setters = { setDepartments, setPositions, setRanks, setShifts, setRoles };
   const tableNames = { departments: 'structure_departments', positions: 'structure_positions', ranks: 'structure_ranks', shifts: 'structure_shifts', roles: 'structure_roles' };
 
+  const structureServices: Record<string, any> = {
+    departments: structureDepartmentService,
+    positions: structurePositionService,
+    ranks: structureRankService,
+    shifts: structureShiftService,
+    roles: structureRoleService,
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
       const [d, p, r, s, rolesData] = await Promise.all([
-        supabase.from('structure_departments').select('*').order('sort_order'),
-        supabase.from('structure_positions').select('*').order('name_ar'),
-        supabase.from('structure_ranks').select('*').order('level'),
-        supabase.from('structure_shifts').select('*').order('code'),
-        supabase.from('structure_roles').select('*').order('code'),
+        structureDepartmentService.findAllDepts(),
+        structurePositionService.findAllPositions(),
+        structureRankService.findAllRanks(),
+        structureShiftService.findAllShifts(),
+        structureRoleService.findAllRoles(),
       ]);
-      if (d.data) setDepartments(d.data); if (p.data) setPositions(p.data);
-      if (r.data) setRanks(r.data); if (s.data) setShifts(s.data);
-      if (rolesData.data) setRoles(rolesData.data);
+      if (d) setDepartments(d); if (p) setPositions(p);
+      if (r) setRanks(r); if (s) setShifts(s);
+      if (rolesData) setRoles(rolesData);
     } catch (err) { addToast('فشل تحميل البيانات', 'error'); }
     finally { setLoading(false); }
   };
@@ -57,17 +65,10 @@ export default function StructureManager() {
 
   const handleSave = async (item: any) => {
     try {
-      const table = tableNames[tab];
-      if (item.id) {
-        await supabase.from(table).update({ ...item, updated_at: new Date().toISOString() }).eq('id', item.id);
-        addToast('تم التحديث بنجاح', 'success');
-      } else {
-        await supabase.from(table).insert(item);
-        addToast('تمت الإضافة بنجاح', 'success');
-      }
+      const service = structureServices[tab];
+      await service.upsertItem(item);
+      addToast(item.id ? 'تم التحديث بنجاح' : 'تمت الإضافة بنجاح', 'success');
       setShowForm(false); setEditing(null);
-      // Sync بهيكلية إدارة الموظفين
-      await syncStructureToProfiles(item, tab);
       fetchData();
     } catch (err: any) { addToast(`خطأ: ${err.message}`, 'error'); }
   };
@@ -75,7 +76,8 @@ export default function StructureManager() {
   const handleDelete = async (id: number) => {
     if (!confirm('هل أنت متأكد من الحذف؟')) return;
     try {
-      await supabase.from(tableNames[tab]).delete().eq('id', id);
+      const service = structureServices[tab];
+      await service.deleteItem(id);
       addToast('تم الحذف بنجاح', 'success');
       fetchData();
     } catch (err: any) { addToast(`خطأ: ${err.message}`, 'error'); }

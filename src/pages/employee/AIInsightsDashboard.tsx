@@ -18,10 +18,11 @@
 
 import { useState, useEffect } from 'react';
 import { Brain, Loader, TrendingUp, AlertTriangle, CheckCircle, Users, BarChart3, Clock, Sparkles, RefreshCw } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
+import { aiService } from '../../services/sdk/AIService';
+import { attendanceSummaryService } from '../../services/sdk/AttendanceService';
+import { useUIStore } from '../../core/stores';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات (تحلّ محل any)
@@ -118,13 +119,15 @@ export default function AIInsightsDashboard() {
   const fetchInsights = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('ai_insights').select('*').order('generated_at', { ascending: false }).limit(50);
-      if (!error && data) setInsights(data as AIInsight[]);
+      const insightsData = await aiService.findAllInsights();
+      if (insightsData) setInsights(insightsData as AIInsight[]);
 
-      const { data: summaryData } = await supabase
-        .from('attendance_summary')
-        .select('*')
-        .gte('shift_date', new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+      const summaryData = await attendanceSummaryService.findAll({
+        filters: { shift_date: thirtyDaysAgo },
+        orderBy: 'shift_date',
+        ascending: false,
+      });
 
       const summary = (summaryData as AttendanceSummaryRow[]) || [];
       if (summary.length > 0) {

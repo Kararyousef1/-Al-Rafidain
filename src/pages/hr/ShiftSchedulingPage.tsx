@@ -3,9 +3,9 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { CalendarClock, Plus, Loader2, Sun, Moon, Sunrise } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { shiftAssignmentService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { Modal, FormField, ModalActions, EmployeePicker } from './LoansPage';
@@ -28,15 +28,20 @@ export default function ShiftSchedulingPage() {
     setLoading(true);
     try {
       const weekEnd = addDays(weekStart, 7);
-      const [{ data: emps }, { data: assigns }] = await Promise.all([
-        supabase.from('employees').select('id, full_name_ar, employee_code').eq('is_active', true).order('full_name_ar'),
-        supabase.from('shift_assignments')
-          .select('*')
-          .gte('shift_date', format(weekStart, 'yyyy-MM-dd'))
-          .lt('shift_date', format(weekEnd, 'yyyy-MM-dd')),
+      const [emps, assigns] = await Promise.all([
+        employeeService.findAll({ filters: { is_active: true }, orderBy: 'full_name_ar', ascending: true }),
+        shiftAssignmentService.findAll({
+          filters: {},
+          orderBy: 'shift_date',
+          ascending: true,
+        } as any),
       ]);
+      // Filter assignments by date range
+      const startStr = format(weekStart, 'yyyy-MM-dd');
+      const endStr = format(weekEnd, 'yyyy-MM-dd');
+      const filtered = (assigns || []).filter((a: any) => a.shift_date >= startStr && a.shift_date < endStr);
       setEmployees(emps || []);
-      setAssignments(assigns || []);
+      setAssignments(filtered);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -52,13 +57,12 @@ export default function ShiftSchedulingPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('shift_assignments').upsert({
+      await shiftAssignmentService.upsertAssignment({
         employee_id: form.employee_id,
         shift_type: form.shift_type,
         shift_date: form.shift_date,
         notes: form.notes,
-      }, { onConflict: 'employee_id,shift_date' });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       addToast('تم تعيين الوردية', 'success');
       setShowAssign(false);
       setForm({ employee_id: '', shift_type: 'صباحي', shift_date: format(new Date(), 'yyyy-MM-dd'), notes: '' });

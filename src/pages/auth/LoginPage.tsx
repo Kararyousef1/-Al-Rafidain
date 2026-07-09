@@ -22,10 +22,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Eye, EyeOff, AlertCircle, CheckCircle2, Loader2,
-  ShieldCheck, ArrowRight, Lock, Zap, ArrowRight as ArrowBack,
+  ShieldCheck, ArrowRight, Lock, Zap, ArrowLeft,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
+import { supabase } from '../../services/supabase/supabase';
+import { useAuthStore } from '../../core/stores';
 
 interface LoginPageProps {
   onNavigate?: (page: string) => void;
@@ -171,11 +171,7 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
         //   3. تعيين isAuthenticated = true ← هذا ما كان مفقوداً!
         //   4. إرسال إشعارات الترحيب وتسجيل الدخول
         //   5. اشتراك Realtime لتحديثات البروفايل
-        const success = await storeLogin(finalEmail, password);
-
-        if (!success) {
-          throw new Error('فشل تسجيل الدخول — تحقق من بياناتك');
-        }
+        await storeLogin(finalEmail, password);
 
         clearAttempts();
         setSuccess('تم تسجيل الدخول بنجاح! جاري التحويل...');
@@ -322,7 +318,7 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
             onClick={onBack}
             className="group absolute -top-14 right-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 backdrop-blur-md border border-white/10 text-white/70 hover:text-white hover:bg-white/10 text-sm font-semibold transition-all"
           >
-            <ArrowBack size={16} className="rotate-180 group-hover:-translate-x-0.5 transition-transform" />
+            <ArrowLeft size={16} className="group-hover:translate-x-0.5 transition-transform" />
             العودة للرئيسية
           </button>
         )}

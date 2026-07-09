@@ -6,8 +6,8 @@ import {
   Loader2, User as UserIcon, BookOpen, GraduationCap,
   Target, Activity, Shield, Layers, ArrowUp, ArrowDown
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
+import { supabase } from '../../services/supabase/supabase';
+import { useUIStore, useAuthStore } from '../../core/stores';
 import { exportToStyledExcel } from '../../utils/exportToExcel';
 
 // ── Types ──

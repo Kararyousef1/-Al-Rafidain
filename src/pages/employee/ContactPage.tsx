@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Send, MessageSquare, Phone, Mail, Clock } from 'lucide-react';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import { useUIStore, useAuthStore } from '../../store';
-import { supabase } from '../../lib/supabase';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import { messageService } from '../../services/sdk';
 
 export default function ContactPage() {
   const { addToast } = useUIStore();
@@ -19,14 +19,13 @@ export default function ContactPage() {
     }
     setSending(true);
     try {
-      const { error } = await supabase.from('hr_messages').insert({
+      await messageService.createMessage({
         employee_id: user?.id,
         subject: form.subject,
         message: form.message,
-        priority: form.priority,
+        priority: form.priority as 'low' | 'normal' | 'urgent',
         status: 'new',
       });
-      if (error) throw error;
       setForm({ subject: '', message: '', priority: 'normal' });
       addToast('تم إرسال رسالتك إلى فريق الموارد البشرية ✅', 'success');
     } catch (err) {

@@ -5,10 +5,11 @@ import {
   ChevronDown, ChevronUp, CalendarDays, FileSpreadsheet,
   Filter,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import { format, parseISO, subDays } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { useAuthStore, useUIStore } from '../../store';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { userService } from '../../services/sdk/UserService';
+import { attendanceService, attendanceSummaryService } from '../../services/sdk/AttendanceService';
 import {
   AttendanceSummary, AttendanceStatus, AttendanceLog,
   STATUS_COLORS, STATUS_LABELS,
@@ -92,34 +93,26 @@ export default function ManagerAttendancePage() {
     if (!user?.id) return;
 
     try {
-      // محاولة جلب الفريق من manager_id + department
-      const { data: byManager } = await supabase
-        .from('profiles')
-        .select('id, full_name, department, role')
-        .eq('manager_id', user.id)
-        .not('role', 'eq', 'developer');
+      const allUsers = await userService.findAllUsers();
+      if (!allUsers) return;
 
-      if (byManager && byManager.length > 0) {
+      const typedUsers = allUsers as unknown as TeamMember[];
+
+      const byManager = typedUsers.filter(
+        (u: any) => u.manager_id === user.id && u.role !== 'developer'
+      );
+
+      if (byManager.length > 0) {
         setTeamMembers(byManager);
         return;
       }
 
-      // fallback: جلب الموظفين في نفس القسم
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('department')
-        .eq('id', user.id)
-        .single();
-
-      if (userProfile?.department) {
-        const { data: byDepartment } = await supabase
-          .from('profiles')
-          .select('id, full_name, department, role')
-          .eq('department', userProfile.department)
-          .not('id', 'eq', user.id)
-          .limit(50);
-
-        if (byDepartment) setTeamMembers(byDepartment);
+      const currentUser = typedUsers.find((u) => u.id === user.id);
+      if (currentUser?.department) {
+        const byDepartment = typedUsers.filter(
+          (u) => u.department === currentUser.department && u.id !== user.id
+        ).slice(0, 50);
+        if (byDepartment.length > 0) setTeamMembers(byDepartment);
       }
     } catch (err) {
       console.error('Error fetching team:', err);
@@ -134,30 +127,31 @@ export default function ManagerAttendancePage() {
     if (teamMembers.length === 0) return;
 
     try {
-      const { data: sumData } = await supabase
-        .from('attendance_summary')
-        .select('*')
-        .eq('shift_date', selectedDate);
+      const sumData = await attendanceSummaryService.findAll({
+        filters: { shift_date: selectedDate },
+      });
 
-      const merged: DailySummary[] = teamMembers.map(emp => {
+      const merged: DailySummary[] = teamMembers.map((emp) => {
         const s = (sumData || []).find((sm: any) => sm.employee_id === emp.id);
         return {
           employee_id: emp.id,
           full_name: emp.full_name,
           department: emp.department || '',
-          summary: s ? {
-            id: s.id,
-            employee_id: s.employee_id,
-            shift_date: s.shift_date,
-            shift_type: s.shift_type,
-            check_in: s.check_in,
-            check_out: s.check_out,
-            total_hours: s.total_hours || 0,
-            late_minutes: s.late_minutes || 0,
-            early_leave_minutes: s.early_leave_minutes || 0,
-            overtime_minutes: s.overtime_minutes || 0,
-            status: s.status,
-          } as AttendanceSummary : null,
+          summary: s
+            ? {
+                id: s.id,
+                employee_id: s.employee_id,
+                shift_date: s.shift_date,
+                shift_type: s.shift_type,
+                check_in: s.check_in,
+                check_out: s.check_out,
+                total_hours: s.total_hours || 0,
+                late_minutes: s.late_minutes || 0,
+                early_leave_minutes: s.early_leave_minutes || 0,
+                overtime_minutes: s.overtime_minutes || 0,
+                status: s.status,
+              } as AttendanceSummary
+            : null,
         };
       });
 
@@ -176,22 +170,29 @@ export default function ManagerAttendancePage() {
     if (teamMembers.length === 0) return;
 
     try {
-      const { data: logs } = await supabase
-        .from('attendance_logs')
-        .select('*')
-        .gte('shift_date', dateFrom)
-        .lte('shift_date', dateTo)
-        .in('employee_id', teamMembers.map(e => e.id))
-        .order('punch_time', { ascending: true });
+      const empIds = teamMembers.map((e) => e.id);
+      const logs: AttendanceLog[] = [];
+
+      // جلب سجلات لكل موظف في النطاق الزمني
+      for (const empId of empIds) {
+        const empLogs = await attendanceService.findLogsByEmployee(empId, {
+          fromDate: dateFrom,
+          toDate: dateTo,
+          limit: 1000,
+        });
+        if (empLogs && empLogs.length > 0) {
+          logs.push(...(empLogs as AttendanceLog[]));
+        }
+      }
 
       // إنشاء الملخصات باستخدام shiftUtils
-      const employeeMap = new Map(teamMembers.map(e => [e.id, e]));
+      const employeeMap = new Map(teamMembers.map((e) => [e.id, e]));
       const grouped = new Map<string, AttendanceLog[]>();
 
-      for (const log of (logs || [])) {
+      for (const log of logs) {
         const key = `${log.employee_id}_${log.shift_date}`;
         if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key)!.push(log as AttendanceLog);
+        grouped.get(key)!.push(log);
       }
 
       // إنشاء ملخص لكل موظف لكل يوم في النطاق
@@ -216,7 +217,7 @@ export default function ManagerAttendancePage() {
       }
 
       // توليد التقارير
-      const empData = teamMembers.map(e => ({
+      const empData = teamMembers.map((e) => ({
         id: e.id,
         full_name: e.full_name,
         department: e.department || '',
@@ -228,7 +229,6 @@ export default function ManagerAttendancePage() {
       // إحصائيات سريعة
       const stats = getTeamQuickStats(generatedReports);
       setQuickStats(stats);
-
     } catch (err) {
       console.error('Error fetching analytics:', err);
     }
@@ -256,7 +256,7 @@ export default function ManagerAttendancePage() {
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
       setSortDirection('desc');
@@ -264,20 +264,31 @@ export default function ManagerAttendancePage() {
   };
 
   const sortedReports = useMemo(() => {
-    const filtered = reports.filter(r =>
-      !searchQuery ||
-      r.full_name.includes(searchQuery) ||
-      r.department.includes(searchQuery)
+    const filtered = reports.filter(
+      (r) =>
+        !searchQuery ||
+        r.full_name.includes(searchQuery) ||
+        r.department.includes(searchQuery)
     );
 
     return [...filtered].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
-        case 'name': cmp = a.full_name.localeCompare(b.full_name); break;
-        case 'attendance_rate': cmp = a.attendance_rate - b.attendance_rate; break;
-        case 'late_days': cmp = a.late_days - b.late_days; break;
-        case 'absent_days': cmp = a.absent_days - b.absent_days; break;
-        case 'overtime': cmp = a.overtime_total_hours - b.overtime_total_hours; break;
+        case 'name':
+          cmp = a.full_name.localeCompare(b.full_name);
+          break;
+        case 'attendance_rate':
+          cmp = a.attendance_rate - b.attendance_rate;
+          break;
+        case 'late_days':
+          cmp = a.late_days - b.late_days;
+          break;
+        case 'absent_days':
+          cmp = a.absent_days - b.absent_days;
+          break;
+        case 'overtime':
+          cmp = a.overtime_total_hours - b.overtime_total_hours;
+          break;
       }
       return sortDirection === 'asc' ? cmp : -cmp;
     });
@@ -289,8 +300,8 @@ export default function ManagerAttendancePage() {
 
   const dailyStats = useMemo(() => {
     const validSummaries = dailySummaries
-      .filter(ds => ds.summary)
-      .map(ds => ds.summary!);
+      .filter((ds) => ds.summary)
+      .map((ds) => ds.summary!);
     return getDailyAttendanceStats(validSummaries);
   }, [dailySummaries]);
 
@@ -302,11 +313,13 @@ export default function ManagerAttendancePage() {
     setExporting(true);
     try {
       const validSummaries = dailySummaries
-        .filter(ds => ds.summary)
-        .map(ds => ds.summary!);
+        .filter((ds) => ds.summary)
+        .map((ds) => ds.summary!);
 
       const names: Record<string, string> = {};
-      dailySummaries.forEach(ds => { names[ds.employee_id] = ds.full_name; });
+      dailySummaries.forEach((ds) => {
+        names[ds.employee_id] = ds.full_name;
+      });
 
       const filename = `تقرير_حضور_${selectedDate}.csv`;
       downloadCSV(validSummaries, filename, names);
@@ -323,9 +336,19 @@ export default function ManagerAttendancePage() {
   const handleExportReportCSV = () => {
     setExporting(true);
     try {
-      // إنشاء CSV من التقارير
-      const header = ['الموظف', 'القسم', 'أيام العمل', 'حضور', 'غياب', 'تأخير', 'مجاز/عطلة', 'نسبة الحضور%', 'أوفرتايم (س)', 'تأخير (دق)'];
-      const rows = sortedReports.map(r => [
+      const header = [
+        'الموظف',
+        'القسم',
+        'أيام العمل',
+        'حضور',
+        'غياب',
+        'تأخير',
+        'مجاز/عطلة',
+        'نسبة الحضور%',
+        'أوفرتايم (س)',
+        'تأخير (دق)',
+      ];
+      const rows = sortedReports.map((r) => [
         r.full_name,
         r.department,
         r.total_days.toString(),
@@ -339,7 +362,7 @@ export default function ManagerAttendancePage() {
       ]);
 
       const csv = [header, ...rows]
-        .map(row => row.map(c => `"${c.replace(/"/g, '""')}"`).join(','))
+        .map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
         .join('\n');
 
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -365,16 +388,23 @@ export default function ManagerAttendancePage() {
   // فرز الجدول
   // ================================================================
 
-  const SortHeader = ({ field, label, className = '' }: { field: SortField; label: string; className?: string }) => (
+  const SortHeader = ({
+    field,
+    label,
+    className = '',
+  }: {
+    field: SortField;
+    label: string;
+    className?: string;
+  }) => (
     <th
       className={`py-3 px-4 font-bold text-slate-500 cursor-pointer hover:text-amber-600 select-none ${className}`}
       onClick={() => toggleSort(field)}
     >
       <div className="flex items-center gap-1">
         {label}
-        {sortField === field && (
-          sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-        )}
+        {sortField === field &&
+          (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
       </div>
     </th>
   );
@@ -406,11 +436,13 @@ export default function ManagerAttendancePage() {
             </h2>
             <p className="text-white/70 mt-1">متابعة حضور وانصراف فريقك مع تحليلات شاملة</p>
           </div>
-          <span className="bg-white/20 px-3 py-1 rounded-full text-sm">{teamMembers.length} موظف</span>
+          <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+            {teamMembers.length} موظف
+          </span>
         </div>
       </div>
 
-      {/* ===== إحصائيات سريعة (Quick Stats) ===== */}
+      {/* ===== Quick Stats ===== */}
       {quickStats && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           <div className="bg-white rounded-xl p-4 border border-slate-100">
@@ -432,7 +464,9 @@ export default function ManagerAttendancePage() {
             <div className="text-xs text-slate-500">أيام تأخير</div>
           </div>
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-            <div className="text-2xl font-bold text-blue-700">{quickStats.totalOvertimeHours.toFixed(1)}</div>
+            <div className="text-2xl font-bold text-blue-700">
+              {quickStats.totalOvertimeHours.toFixed(1)}
+            </div>
             <div className="text-xs text-slate-500">أوفرتايم (س)</div>
           </div>
           <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
@@ -442,59 +476,62 @@ export default function ManagerAttendancePage() {
         </div>
       )}
 
-      {/* ===== أفضل وأسوأ الموظفين ===== */}
-      {quickStats && (quickStats.topPerformers.length > 0 || quickStats.underPerformers.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* أفضل الموظفين */}
-          {quickStats.topPerformers.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-100 p-4">
-              <h3 className="font-bold text-emerald-700 flex items-center gap-2 mb-3">
-                <Award size={18} /> أفضل الموظفين أداءً
-              </h3>
-              <div className="space-y-2">
-                {quickStats.topPerformers.slice(0, 5).map((emp, i) => (
-                  <div key={emp.employee_id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">
-                        {i + 1}
+      {/* ===== Top/Under Performers ===== */}
+      {quickStats &&
+        (quickStats.topPerformers.length > 0 ||
+          quickStats.underPerformers.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {quickStats.topPerformers.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                <h3 className="font-bold text-emerald-700 flex items-center gap-2 mb-3">
+                  <Award size={18} /> أفضل الموظفين أداءً
+                </h3>
+                <div className="space-y-2">
+                  {quickStats.topPerformers.slice(0, 5).map((emp, i) => (
+                    <div key={emp.employee_id} className="flex items-center justify-between py-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">
+                          {i + 1}
+                        </span>
+                        <span className="text-sm font-medium text-slate-700">{emp.full_name}</span>
+                      </div>
+                      <span className="text-sm font-bold text-emerald-600">
+                        {emp.attendance_rate}%
                       </span>
-                      <span className="text-sm font-medium text-slate-700">{emp.full_name}</span>
                     </div>
-                    <span className="text-sm font-bold text-emerald-600">{emp.attendance_rate}%</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* أسوأ الموظفين */}
-          {quickStats.underPerformers.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-100 p-4">
-              <h3 className="font-bold text-red-700 flex items-center gap-2 mb-3">
-                <AlertTriangle size={18} /> يحتاجون تحسين
-              </h3>
-              <div className="space-y-2">
-                {quickStats.underPerformers.slice(0, 5).map((emp, i) => (
-                  <div key={emp.employee_id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold">
-                        {i + 1}
-                      </span>
-                      <span className="text-sm font-medium text-slate-700">{emp.full_name}</span>
+            )}
+            {quickStats.underPerformers.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-100 p-4">
+                <h3 className="font-bold text-red-700 flex items-center gap-2 mb-3">
+                  <AlertTriangle size={18} /> يحتاجون تحسين
+                </h3>
+                <div className="space-y-2">
+                  {quickStats.underPerformers.slice(0, 5).map((emp, i) => (
+                    <div key={emp.employee_id} className="flex items-center justify-between py-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold">
+                          {i + 1}
+                        </span>
+                        <span className="text-sm font-medium text-slate-700">{emp.full_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-red-500">{emp.absent_days} غياب</span>
+                        <span className="text-sm font-bold text-red-600">
+                          {emp.attendance_rate}%
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-red-500">{emp.absent_days} غياب</span>
-                      <span className="text-sm font-bold text-red-600">{emp.attendance_rate}%</span>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
-      {/* ===== إحصائيات اليوم ===== */}
+      {/* ===== Daily Stats ===== */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl p-3 border border-slate-100 text-center">
           <div className="text-xl font-bold text-slate-800">{dailyStats.total}</div>
@@ -514,41 +551,49 @@ export default function ManagerAttendancePage() {
         </div>
       </div>
 
-      {/* ===== شريط الأدوات ===== */}
+      {/* ===== Toolbar ===== */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4">
         <div className="flex flex-wrap items-center gap-3">
-          {/* التاريخ */}
           <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
             <CalendarDays size={16} className="text-slate-400" />
             <span className="text-xs text-slate-500">اليوم:</span>
-            <input type="date" value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="bg-transparent text-sm outline-none" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-transparent text-sm outline-none"
+            />
           </div>
 
-          {/* نطاق التقارير */}
           <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
             <Filter size={16} className="text-slate-400" />
             <span className="text-xs text-slate-500">من:</span>
-            <input type="date" value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="bg-transparent text-sm outline-none w-28" />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-transparent text-sm outline-none w-28"
+            />
             <span className="text-xs text-slate-500">إلى:</span>
-            <input type="date" value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="bg-transparent text-sm outline-none w-28" />
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="bg-transparent text-sm outline-none w-28"
+            />
           </div>
 
-          {/* البحث */}
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="ابحث باسم الموظف أو القسم..."
+            <input
+              type="text"
+              placeholder="ابحث باسم الموظف أو القسم..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pr-9 pl-3 py-2 border rounded-xl text-sm outline-none focus:border-amber-500 bg-slate-50" />
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pr-9 pl-3 py-2 border rounded-xl text-sm outline-none focus:border-amber-500 bg-slate-50"
+            />
           </div>
 
-          {/* أزرار التصدير */}
           <button
             onClick={handleExportCSV}
             disabled={exporting || dailySummaries.length === 0}
@@ -569,7 +614,7 @@ export default function ManagerAttendancePage() {
         </div>
       </div>
 
-      {/* ===== جدول الحضور اليومي ===== */}
+      {/* ===== Daily Table ===== */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-4 py-3 border-b bg-slate-50 flex items-center justify-between">
           <h3 className="font-bold text-slate-700 flex items-center gap-2">
@@ -605,11 +650,13 @@ export default function ManagerAttendancePage() {
                 dailySummaries.map((ds, i) => {
                   const s = ds.summary;
                   return (
-                    <tr key={ds.employee_id}
+                    <tr
+                      key={ds.employee_id}
                       className={`border-b border-slate-50 hover:bg-slate-50 transition-colors
                         ${i % 2 === 0 ? '' : 'bg-slate-50/30'}
                         ${s?.status === 'غائب' ? 'bg-red-50/30' : ''}
-                        ${s?.status === 'متأخر' ? 'bg-amber-50/30' : ''}`}>
+                        ${s?.status === 'متأخر' ? 'bg-amber-50/30' : ''}`}
+                    >
                       <td className="py-3 px-4 font-bold text-slate-800">{ds.full_name}</td>
                       <td className="py-3 px-4 text-slate-600">{ds.department || '--'}</td>
                       <td className="py-3 px-4">{s?.shift_type || '--'}</td>
@@ -624,25 +671,31 @@ export default function ManagerAttendancePage() {
                       </td>
                       <td className="py-3 px-4">
                         {s && s.late_minutes > 0 ? (
-                          <span className="text-amber-600 text-xs font-medium">{s.late_minutes} د</span>
+                          <span className="text-amber-600 text-xs font-medium">
+                            {s.late_minutes} د
+                          </span>
                         ) : (
                           <span className="text-slate-300">--</span>
                         )}
                       </td>
                       <td className="py-3 px-4">
                         {s && s.overtime_minutes > 0 ? (
-                          <span className="text-blue-600 text-xs font-medium">{s.overtime_minutes} د</span>
+                          <span className="text-blue-600 text-xs font-medium">
+                            {s.overtime_minutes} د
+                          </span>
                         ) : (
                           <span className="text-slate-300">--</span>
                         )}
                       </td>
                       <td className="py-3 px-4">
                         {s ? (
-                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+                          <span
+                            className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
                             style={{
                               backgroundColor: `${STATUS_COLORS[s.status as AttendanceStatus]}20`,
                               color: STATUS_COLORS[s.status as AttendanceStatus],
-                            }}>
+                            }}
+                          >
                             {STATUS_LABELS[s.status as AttendanceStatus]}
                           </span>
                         ) : (
@@ -658,7 +711,7 @@ export default function ManagerAttendancePage() {
         </div>
       </div>
 
-      {/* ===== جدول التقارير التحليلية ===== */}
+      {/* ===== Analytics Table ===== */}
       {sortedReports.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
           <div className="px-4 py-3 border-b bg-slate-50 flex items-center justify-between">
@@ -685,11 +738,13 @@ export default function ManagerAttendancePage() {
               </thead>
               <tbody>
                 {sortedReports.map((r, i) => (
-                  <tr key={r.employee_id}
+                  <tr
+                    key={r.employee_id}
                     className={`border-b border-slate-50 hover:bg-slate-50 transition-colors
                       ${i % 2 === 0 ? '' : 'bg-slate-50/30'}
                       ${r.attendance_rate < 70 ? 'bg-red-50/30' : ''}
-                      ${r.attendance_rate >= 95 ? 'bg-emerald-50/30' : ''}`}>
+                      ${r.attendance_rate >= 95 ? 'bg-emerald-50/30' : ''}`}
+                  >
                     <td className="py-3 px-4 font-bold text-slate-800">{r.full_name}</td>
                     <td className="py-3 px-4 text-slate-600">{r.department || '--'}</td>
                     <td className="py-3 px-4 font-medium">{r.total_days}</td>
@@ -698,34 +753,50 @@ export default function ManagerAttendancePage() {
                         <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full ${
-                              r.attendance_rate >= 90 ? 'bg-emerald-500' :
-                              r.attendance_rate >= 70 ? 'bg-amber-500' : 'bg-red-500'
+                              r.attendance_rate >= 90
+                                ? 'bg-emerald-500'
+                                : r.attendance_rate >= 70
+                                ? 'bg-amber-500'
+                                : 'bg-red-500'
                             }`}
                             style={{ width: `${r.attendance_rate}%` }}
                           />
                         </div>
-                        <span className={`text-xs font-bold ${
-                          r.attendance_rate >= 90 ? 'text-emerald-600' :
-                          r.attendance_rate >= 70 ? 'text-amber-600' : 'text-red-600'
-                        }`}>
+                        <span
+                          className={`text-xs font-bold ${
+                            r.attendance_rate >= 90
+                              ? 'text-emerald-600'
+                              : r.attendance_rate >= 70
+                              ? 'text-amber-600'
+                              : 'text-red-600'
+                          }`}
+                        >
                           {r.attendance_rate}%
                         </span>
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`font-medium ${r.absent_days > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                      <span
+                        className={`font-medium ${r.absent_days > 0 ? 'text-red-600' : 'text-slate-400'}`}
+                      >
                         {r.absent_days}
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`font-medium ${r.late_days > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                      <span
+                        className={`font-medium ${r.late_days > 0 ? 'text-amber-600' : 'text-slate-400'}`}
+                      >
                         {r.late_days}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-slate-600">{r.leave_days + r.holiday_days}</td>
                     <td className="py-3 px-4">
-                      <span className={`font-medium ${r.overtime_total_hours > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
-                        {r.overtime_total_hours > 0 ? `${r.overtime_total_hours.toFixed(1)}س` : '--'}
+                      <span
+                        className={`font-medium ${r.overtime_total_hours > 0 ? 'text-blue-600' : 'text-slate-400'}`}
+                      >
+                        {r.overtime_total_hours > 0
+                          ? `${r.overtime_total_hours.toFixed(1)}س`
+                          : '--'}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-slate-600">{r.late_total_minutes} د</td>

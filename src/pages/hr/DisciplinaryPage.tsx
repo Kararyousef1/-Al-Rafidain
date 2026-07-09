@@ -3,13 +3,13 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { ShieldAlert, Plus, Loader2, Eye, AlertTriangle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import { disciplinaryActionService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { DisciplinaryAction, DisciplinaryType } from '../../types/hrModules';
-import { DISCIPLINARY_TYPE_LABELS } from '../../types/hrModules';
+import type { DisciplinaryAction, DisciplinaryType } from '../../shared/types/hrModules';
+import { DISCIPLINARY_TYPE_LABELS } from '../../shared/types/hrModules';
 import { Modal, FormField, ModalActions, EmployeePicker } from './LoansPage';
 
 export default function DisciplinaryPage() {
@@ -28,12 +28,11 @@ export default function DisciplinaryPage() {
   const fetchActions = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('disciplinary_actions')
-        .select(`*, employees!inner(full_name_ar, employee_code)`)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setActions((data || []) as unknown as DisciplinaryAction[]);
+      const data = await disciplinaryActionService.findAllActions();
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
+      const enriched = (data || []).map((a: any) => ({ ...a, employees: empMap.get(a.employee_id) || null }));
+      setActions(enriched as unknown as DisciplinaryAction[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
     } finally {
@@ -50,13 +49,11 @@ export default function DisciplinaryPage() {
     }
     try {
       // ربط الإجراء التأديبي بالمستخدم الحالي (HR) وليس موظف عشوائي
-      const currentEmployeeId = user?.employee_id || user?.id;
-      const { error } = await supabase.from('disciplinary_actions').insert({
+      await disciplinaryActionService.createAction({
         ...form,
-        issued_by: currentEmployeeId,
+        issued_by: user?.id,
         status: 'active',
-      });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       addToast('تم تسجيل الإجراء التأديبي', 'success');
       setShowCreate(false);
       setForm({ employee_id: '', type: 'verbal_warning', reason: '', description: '', severity: 'low', incident_date: format(new Date(), 'yyyy-MM-dd') });

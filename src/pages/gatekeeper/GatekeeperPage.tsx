@@ -1,25 +1,26 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  GatekeeperPage - صفحة بوابة الحارس (نسخة مُصلحة)
+ *  GatekeeperPage - صفحة بوابة الحارس (نسخة مُصلحة - SDK)
+ *  تم إزالة جميع استدعاءات supabase.from() المباشرة
+ *  مع الإبقاء على supabase.channel() للـ Realtime (استثناء مقبول)
  * ════════════════════════════════════════════════════════════════
- *
- *  🔧 الإصلاحات المُطبّقة:
- *  ─────────────────────────────────────────────────────────────────
- *  ✅ 13 استخدام any → 0 (أنواع صريحة)
- *  ✅ تنظيف جميع markdown artifacts
- *  ✅ إصلاح showToast(`...`) المكسور
- *  ✅ catch (error: any) → catch (err: unknown) + getErrorMessage (6 مواضع)
- *  ✅ showToast(... as any) → نوع union صريح
- *  ✅ arrivalData: any → ArrivalData interface
- *  ════════════════════════════════════════════════════════════════
  */
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../sdk/supabase';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import { useUIStore, useAuthStore } from '../../store';
+import { supabase } from '../../services/supabase/supabase';
+import {
+  gatekeeperSessionService,
+  gatekeeperVisitorLogService,
+  movementLogService,
+  employeeBreakService,
+  employeeService,
+  gatekeeperVisitorService,
+} from '../../services/sdk';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Input from '../../shared/components/ui/Input';
+import { userService } from '../../services/sdk/UserService';
+import { useUIStore, useAuthStore } from '../../core/stores';
 import { differenceInSeconds } from 'date-fns';
 import {
   UserPlus, Users, Clock, LogOut, Edit, Trash2, Search, RefreshCw,
@@ -27,7 +28,7 @@ import {
   Shield,
 } from 'lucide-react';
 import './gatekeeper.css';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 import type {
   GatekeeperSession,
@@ -36,7 +37,7 @@ import type {
   MovementLog,
   EmployeeBreak,
   MovementFormData,
-} from '../../types/gatekeeper';
+} from '../../shared/types/gatekeeper';
 
 // ════════════════════════════════════════════════════
 // أنواع محلية (تحلّ محل any)
@@ -153,7 +154,7 @@ export default function GatekeeperPage() {
     const checkAutoClose = async () => {
       if (new Date() >= new Date(currentSession.expected_end_time!)) {
         try {
-          await supabase.from('gatekeeper_sessions').update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', currentSession.id);
+          await gatekeeperSessionService.endSession(currentSession.id);
         } catch (e) {
           console.warn('Auto-close failed:', getErrorMessage(e));
         }
@@ -172,17 +173,15 @@ export default function GatekeeperPage() {
       setLoading(true);
       setDbError(null);
 
-      const { data: activeSession, error } = await supabase
-        .from('gatekeeper_sessions').select('*').eq('is_active', true)
-        .order('started_at', { ascending: false }).limit(1).maybeSingle();
+      const sessions = await gatekeeperSessionService.findAll({
+        filters: { is_active: true },
+        orderBy: 'started_at',
+        ascending: false,
+        limit: 1,
+      });
 
-      if (error) {
-        setDbError('جداول البوابة غير موجودة في قاعدة البيانات');
-        return;
-      }
-
-      if (activeSession) {
-        const session = activeSession as GatekeeperSession;
+      if (sessions && sessions.length > 0) {
+        const session = sessions[0] as GatekeeperSession;
         setCurrentSession(session);
         await loadVisitors(session.id);
         await loadMovements(session.started_at);
@@ -202,9 +201,8 @@ export default function GatekeeperPage() {
 
   const loadEmployees = async () => {
     try {
-      const { data, error } = await supabase.from('profiles').select('id, full_name, email, department, role');
-      if (error) throw error;
-      if (data) setEmployees(data as EmployeeBasic[]);
+      const users = await userService.findAllUsers();
+      if (users) setEmployees(users as EmployeeBasic[]);
     } catch (err) {
       console.warn('Failed to load employees:', getErrorMessage(err));
     }
@@ -212,11 +210,8 @@ export default function GatekeeperPage() {
 
   const loadVisitors = async (sessionId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('gatekeeper_visitor_logs').select('*, visitor:gatekeeper_visitors(*)')
-        .eq('session_id', sessionId).order('check_in_time', { ascending: false });
-      if (error) throw error;
-      setVisitors((data as GatekeeperVisitorLog[]) || []);
+      const logs = await gatekeeperVisitorLogService.findVisitorLogs({ sessionId });
+      if (logs) setVisitors(logs as GatekeeperVisitorLog[]);
     } catch (err) {
       console.error('Error loading visitors:', getErrorMessage(err));
       showToast('فشل في تحميل الزوار', 'error');
@@ -226,10 +221,8 @@ export default function GatekeeperPage() {
   const loadMovements = async (sessionStart?: string) => {
     if (!sessionStart) return;
     try {
-      const { data, error } = await supabase
-        .from('movements_log').select('*').gte('departure_at', sessionStart)
-        .order('departure_at', { ascending: false });
-      if (!error && data) setMovements(data as MovementLog[]);
+      const logs = await movementLogService.findMovements({ fromDate: sessionStart });
+      if (logs) setMovements(logs as MovementLog[]);
       await loadApprovedBreaks();
     } catch (err) {
       console.warn('Failed to load movements:', getErrorMessage(err));
@@ -238,11 +231,8 @@ export default function GatekeeperPage() {
 
   const loadApprovedBreaks = async () => {
     try {
-      const { data, error } = await supabase
-        .from('employee_breaks')
-        .select('*, employee:profiles!employee_breaks_employee_id_fkey(full_name, department)')
-        .in('status', ['approved', 'out']).order('created_at', { ascending: false });
-      if (!error && data) setApprovedBreaks(data as EmployeeBreak[]);
+      const breaks = await employeeBreakService.findActiveBreaks();
+      if (breaks) setApprovedBreaks(breaks as EmployeeBreak[]);
     } catch (err) {
       console.warn('Failed to load approved breaks:', getErrorMessage(err));
     }
@@ -253,7 +243,7 @@ export default function GatekeeperPage() {
   const handleStartShift = async (shiftType: string, shiftLabel: string) => {
     if (shiftType === 'morning' && !isMorningValid) return showToast('لا يمكن فتح الوردية الصباحية الآن', 'error');
     if (shiftType === 'evening' && !isEveningValid) return showToast('لا يمكن فتح الوردية المسائية الآن', 'error');
-    if (shiftType === 'night' && !isNightValid) return showToast('لا يمكن فتح الوردية الليلية الآن', 'error');
+    if (shiftType === 'night' && !isNightValid) return showToast('لا يمكن فتح الوردية الليلية الآن', 'error' as ToastType);
 
     if (!gkName.trim() || gkPin.length !== 3) {
       showToast('يجب إدخال الاسم والرمز السري من 3 أرقام', 'error');
@@ -286,18 +276,19 @@ export default function GatekeeperPage() {
 
       const sessionName = `وردية ${shiftLabel} - ${new Date().toLocaleDateString('ar-SA')}`;
 
-      const { data: session, error } = await supabase
-        .from('gatekeeper_sessions').insert({
-          session_name: sessionName, shift_type: shiftType, gatekeeper_name: gkName.trim(),
-          pin_code: gkPin, expected_end_time: endTime.toISOString(), is_active: true,
-          visitor_count: 0, created_by: user?.id,
-        }).select().single();
+      const newSession = await gatekeeperSessionService.createSession({
+        session_name: sessionName,
+        shift_type: shiftType,
+        gatekeeper_name: gkName.trim(),
+        pin_code: gkPin,
+        expected_end_time: endTime.toISOString(),
+        is_active: true,
+        visitor_count: 0,
+        created_by: user?.id,
+      });
 
-      if (error) throw error;
-
-      const newSession = session as GatekeeperSession;
-      setCurrentSession(newSession);
-      await loadMovements(newSession.started_at);
+      setCurrentSession(newSession as GatekeeperSession);
+      await loadMovements((newSession as GatekeeperSession).started_at);
       showToast(`تم بدء ${sessionName} بنجاح`, 'success');
     } catch (err) {
       console.error('Start shift error:', getErrorMessage(err));
@@ -314,8 +305,7 @@ export default function GatekeeperPage() {
       if (!confirm('وقت الوردية لم ينتهِ بعد. هل تريد طلب إنهاء مبكر من الإدارة؟')) return;
       setLoading(true);
       try {
-        const { error } = await supabase.from('gatekeeper_sessions').update({ handover_status: 'pending_end' }).eq('id', currentSession.id);
-        if (error) throw error;
+        await gatekeeperSessionService.updateHandoverStatus(currentSession.id, 'pending_end');
         setCurrentSession({ ...currentSession, handover_status: 'pending_end' });
         showToast('تم إرسال طلب الإنهاء المبكر للإدارة', 'success');
       } catch (err) {
@@ -330,8 +320,7 @@ export default function GatekeeperPage() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.from('gatekeeper_sessions').update({ is_active: false, ended_at: new Date().toISOString() }).eq('id', currentSession.id);
-      if (error) throw error;
+      await gatekeeperSessionService.endSession(currentSession.id);
       showToast('تم إغلاق الوردية بنجاح', 'success');
       setCurrentSession(null);
     } catch (err) {
@@ -346,8 +335,7 @@ export default function GatekeeperPage() {
     if (!confirm('هل تريد طلب بديل طارئ؟')) return;
     setLoading(true);
     try {
-      const { error } = await supabase.from('gatekeeper_sessions').update({ handover_status: 'pending' }).eq('id', currentSession.id);
-      if (error) throw error;
+      await gatekeeperSessionService.updateHandoverStatus(currentSession.id, 'pending');
       setCurrentSession({ ...currentSession, handover_status: 'pending' });
       showToast('تم إرسال الطلب للموارد البشرية', 'success');
     } catch (err) {
@@ -367,13 +355,21 @@ export default function GatekeeperPage() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('gatekeeper_sessions').update({ gatekeeper_name: takeoverName.trim(), handover_status: 'completed', temp_pin: null })
-        .eq('id', currentSession.id).select().single();
-      if (error) throw error;
-      const newSession = data as GatekeeperSession;
-      setCurrentSession(newSession);
-      await loadMovements(newSession.started_at);
+      const updatedSession = await gatekeeperSessionService.createSession({
+        gatekeeper_name: takeoverName.trim(),
+        handover_status: 'completed',
+        temp_pin: null,
+        started_at: currentSession.started_at,
+        shift_type: currentSession.shift_type,
+        session_name: currentSession.session_name,
+        pin_code: currentSession.pin_code,
+        expected_end_time: currentSession.expected_end_time,
+        is_active: true,
+        visitor_count: currentSession.visitor_count,
+        created_by: user?.id,
+      });
+      setCurrentSession(updatedSession as GatekeeperSession);
+      await loadMovements((updatedSession as GatekeeperSession).started_at);
       showToast('تم استلام الوردية بنجاح!', 'success');
     } catch (err) {
       showToast('حدث خطأ أثناء الاستلام: ' + getErrorMessage(err), 'error');
@@ -392,28 +388,32 @@ export default function GatekeeperPage() {
       setLoading(true);
 
       if (editingVisitor) {
-        const { error: updateError } = await supabase
-          .from('gatekeeper_visitors').update({
-            name: formData.name, phone: formData.phone, company: formData.company,
-            purpose: formData.purpose, notes: formData.notes, location: formData.location,
-            updated_at: new Date().toISOString(),
-          }).eq('id', editingVisitor.visitor_id);
-        if (updateError) throw updateError;
+        await gatekeeperVisitorService.updateVisitor(editingVisitor.visitor_id, {
+          name: formData.name,
+          phone: formData.phone,
+          company: formData.company,
+          purpose: formData.purpose,
+          notes: formData.notes,
+          location: formData.location,
+          updated_at: new Date().toISOString(),
+        });
         showToast('تم تحديث بيانات الزائر بنجاح', 'success');
       } else {
-        const { data: visitor, error: visitorError } = await supabase
-          .from('gatekeeper_visitors').insert({
-            name: formData.name, phone: formData.phone, company: formData.company,
-            purpose: formData.purpose, notes: formData.notes, location: formData.location,
-          }).select().single();
-        if (visitorError) throw visitorError;
+        const visitor = await gatekeeperVisitorService.createVisitor({
+          name: formData.name,
+          phone: formData.phone,
+          company: formData.company,
+          purpose: formData.purpose,
+          notes: formData.notes,
+          location: formData.location,
+        });
 
-        const { error: logError } = await supabase
-          .from('gatekeeper_visitor_logs').insert({
-            session_id: currentSession.id, visitor_id: (visitor as { id: string }).id,
-            badge_number: `B${Date.now().toString().slice(-6)}`, status: 'checked_in',
-          });
-        if (logError) throw logError;
+        await gatekeeperVisitorLogService.createVisitorLog({
+          session_id: currentSession.id,
+          visitor_id: (visitor as { id: string }).id,
+          badge_number: `B${Date.now().toString().slice(-6)}`,
+          status: 'checked_in',
+        });
         showToast('تم تسجيل الزائر بنجاح', 'success');
       }
 
@@ -430,10 +430,7 @@ export default function GatekeeperPage() {
   const handleCheckout = async (log: GatekeeperVisitorLog) => {
     if (!confirm('هل أنت متأكد من تسجيل خروج هذا الزائر؟')) return;
     try {
-      const { error } = await supabase
-        .from('gatekeeper_visitor_logs').update({ check_out_time: new Date().toISOString(), status: 'checked_out' })
-        .eq('id', log.id);
-      if (error) throw error;
+      await gatekeeperVisitorLogService.updateVisitorLogStatus(log.id, 'checked_out');
       if (currentSession) await loadVisitors(currentSession.id);
       showToast('تم تسجيل الخروج بنجاح', 'success');
     } catch (err) {
@@ -454,8 +451,7 @@ export default function GatekeeperPage() {
   const handleDelete = async (log: GatekeeperVisitorLog) => {
     if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return;
     try {
-      const { error } = await supabase.from('gatekeeper_visitor_logs').delete().eq('id', log.id);
-      if (error) throw error;
+      await gatekeeperVisitorLogService.deleteVisitorLog(log.id);
       if (currentSession) await loadVisitors(currentSession.id);
       showToast('تم حذف السجل بنجاح', 'success');
     } catch (err) {
@@ -489,16 +485,18 @@ export default function GatekeeperPage() {
         ? `[تصريح من المشرف: ${approvedBreak.supervisor_name}] ${movementForm.notes}`
         : `[بدون تصريح خروج] ${movementForm.notes}`;
 
-      const { error } = await supabase.from('movements_log').insert({
-        employee_id: movementForm.employee_id, employee_name: movementForm.employee_name,
-        department: finalDepartment, destination: finalDestination, notes,
-        logged_by_id: user?.id, departure_at: new Date().toISOString(),
+      await movementLogService.recordMovement({
+        employee_id: movementForm.employee_id,
+        employee_name: movementForm.employee_name,
+        department: finalDepartment,
+        destination: finalDestination,
+        notes,
+        logged_by_id: user?.id || '',
+        departure_at: new Date().toISOString(),
       });
 
-      if (error) throw error;
-
       if (approvedBreak) {
-        await supabase.from('employee_breaks').update({ status: 'out', out_time: new Date().toISOString() }).eq('id', approvedBreak.id);
+        await employeeBreakService.updateBreakStatus(approvedBreak.id, 'out', new Date().toISOString());
       }
 
       showToast('تم تسجيل خروج الموظف بنجاح', 'success');
@@ -528,8 +526,7 @@ export default function GatekeeperPage() {
         notes = `${notes} | [تأكيد وصول] وصل إلى (${actualLocation})`;
       }
 
-      const { error } = await supabase.from('movements_log').update({ returned_at: new Date().toISOString(), notes }).eq('id', arrivalData.id);
-      if (error) throw error;
+      await movementLogService.recordReturn(arrivalData.id, notes);
 
       showToast(isViolation ? 'تم رصد مخالفة مسار وتسجيل الوصول' : 'تم تسجيل الوصول بنجاح', isViolation ? 'warning' : 'success');
       setShowArrivalModal(false);

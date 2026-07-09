@@ -1,6 +1,6 @@
 import type {
   User, Problem, Notification, WellnessData, Analytics, AuditLog
-} from '../../types';
+} from '../../shared/types';
 
 // ════════════════════════════════════════════════════════════════
 //  بيانات وهمية Mock Data - نظام الرافدين HR

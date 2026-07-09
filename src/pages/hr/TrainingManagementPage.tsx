@@ -19,15 +19,15 @@ import {
   BookOpen, AlertTriangle, Layers, Users, Award,
   FileText, Image, HelpCircle, Loader2, Lock, Unlock,
 } from 'lucide-react';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import { supabase } from '../../lib/supabase';
-import { useUIStore, useAuthStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
-import type { RichContent } from '../../types/media';
-import type { Quiz } from '../../types/quiz';
-import RichContentEditor from '../../components/ui/RichContentEditor';
-import QuizEditor from '../../components/ui/QuizEditor';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import { useUIStore, useAuthStore } from '../../core/stores';
+import { courseService, certificationService, employeeService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
+import type { RichContent } from '../../shared/types/media';
+import type { Quiz } from '../../shared/types/quiz';
+import RichContentEditor from '../../shared/components/ui/RichContentEditor';
+import QuizEditor from '../../shared/components/ui/QuizEditor';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات
@@ -331,8 +331,7 @@ export default function TrainingManagementPage() {
   const fetchCourses = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('courses').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
+      const data = await courseService.findAllCourses();
       if (data) setCourses((data as CourseRow[]).map(convertRowToCourse));
     } catch (err) {
       console.error('Failed to load courses:', getErrorMessage(err));
@@ -343,13 +342,14 @@ export default function TrainingManagementPage() {
 
   const fetchCertifications = async () => {
     try {
-      const { data, error } = await supabase.from('employee_certifications').select('*, employees!inner(full_name_ar, email)').order('issue_date', { ascending: false });
-      if (error) throw error;
-      // جلب أسماء الأقسام + معالجة employees → full_name_ar
+      const data = await certificationService.findAllCertifications();
+      // جلب أسماء الموظفين
+      const employees = await employeeService.findAll({ orderBy: 'full_name_ar' });
+      const empMap = new Map((employees || []).map((e: any) => [e.id, e]));
       if (data) {
         const mapped = (data as any[]).map((c) => ({
           ...c,
-          profiles: c.employees ? { full_name: c.employees.full_name_ar || '', email: c.employees.email || '' } : null,
+          profiles: empMap.get(c.employee_id) ? { full_name: empMap.get(c.employee_id).full_name_ar || '', email: empMap.get(c.employee_id).email || '' } : null,
         }));
         setCertifications(mapped.map(convertRowToCert));
       }
@@ -399,14 +399,12 @@ export default function TrainingManagementPage() {
       };
 
       if (editingCourse) {
-        const { error } = await supabase.from('courses').update(courseData).eq('id', editingCourse.id);
-        if (error && !error.message?.includes('does not exist')) throw error;
+        await courseService.updateCourse(editingCourse.id, courseData as unknown as Record<string, unknown>);
         saveToLocal(editingCourse.id, courseData);
         addToast('تم تحديث الدورة بنجاح', 'success');
       } else {
         const newId = `course-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const { error } = await supabase.from('courses').insert({ id: newId, ...courseData, created_by: user?.id });
-        if (error && !error.message?.includes('does not exist')) throw error;
+        await courseService.createCourse({ id: newId, ...courseData, created_by: user?.id } as any);
         saveToLocal(newId, courseData);
         setCourses((prev) => [{
           id: newId, title: data.title || '', titleEn: data.titleEn, description: data.description || '',
@@ -432,7 +430,7 @@ export default function TrainingManagementPage() {
     const course = courses.find((c) => c.id === courseId);
     if (!course) return;
     try {
-      await supabase.from('courses').update({ active: !course.active }).eq('id', courseId);
+      await courseService.toggleActive(courseId, !course.active);
       setCourses((prev) => prev.map((c) => (c.id === courseId ? { ...c, active: !c.active } : c)));
       addToast('تم تغيير حالة الدورة', 'info');
     } catch {
@@ -442,7 +440,7 @@ export default function TrainingManagementPage() {
 
   const handleDeleteCourse = async (courseId: string) => {
     try {
-      await supabase.from('courses').delete().eq('id', courseId);
+      await courseService.deleteCourse(courseId);
       setCourses((prev) => prev.filter((c) => c.id !== courseId));
       addToast('تم حذف الدورة', 'warning');
     } catch {

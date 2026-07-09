@@ -28,21 +28,21 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { useAuthStore, useUIStore } from '../../store';
+import { useAuthStore, useUIStore } from '../../core/stores';
 
 // ─── Hook الموحد للإشعارات (يدير الجلب + Realtime + العمليات) ────
-import { useNotificationSubscription } from '../../hooks/useNotificationSubscription';
+import { useNotificationSubscription } from '../../shared/hooks/useNotificationSubscription';
 
 // ─── دوال مساعدة نقية (Cache Manager) ─────────────────────────────
 import {
   calculateStats,
   filterNotifications,
   syncNotificationsFromServer,
-} from '../../lib/notificationManager';
+} from '../../services/notifications/notificationManager';
 
-import type { AppNotification, NotificationType, NotificationFilter } from '../../constants/notificationTypes';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
+import type { AppNotification, NotificationType, NotificationFilter } from '../../core/constants/notificationTypes';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
 
 // ════════════════════════════════════════════════════════════════
 //  ثوابت الأنواع والفلاتر

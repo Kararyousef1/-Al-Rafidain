@@ -17,17 +17,19 @@
  */
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
+import { userService } from '../../services/sdk/UserService';
+import { incidentService } from '../../services/sdk/IncidentService';
+import { wellnessEntryService } from '../../services/sdk/WellnessService';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, Radar, AreaChart, Area,
   ScatterChart, Scatter, ZAxis, ComposedChart, Line, Legend,
 } from 'recharts';
 import { Loader, Brain, Sparkles, Filter, Database, TrendingUp, CheckCircle } from 'lucide-react';
-import Button from '../../components/ui/Button';
-import { getErrorMessage } from '../../lib/errors';
+import Button from '../../shared/components/ui/Button';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات
@@ -146,15 +148,15 @@ export default function AnalyticsPage() {
     const fetchAnalytics = async () => {
       setLoading(true);
       try {
-        const [{ data: profiles }, { data: incidents }, { data: wellness }] = await Promise.all([
-          supabase.from('profiles').select('*').eq('role', 'employee'),
-          supabase.from('incidents').select('*'),
-          supabase.from('wellness_entries').select('*'),
+      const [profiles, incidents, wellness] = await Promise.all([
+          userService.findAllUsers({ role: 'employee' }),
+          incidentService.findAll(),
+          wellnessEntryService.findAllEntries(),
         ]);
 
-        const profileList = (profiles as ProfileRecord[]) || [];
-        const incidentList = (incidents as IncidentRecord[]) || [];
-        const wellnessList = (wellness as WellnessRecord[]) || [];
+        const profileList = (profiles || []) as ProfileRecord[];
+        const incidentList = (incidents || []) as IncidentRecord[];
+        const wellnessList = (wellness || []) as WellnessRecord[];
         const currentMonth = new Date().getMonth();
 
         const resolvedThisMonth = incidentList.filter(

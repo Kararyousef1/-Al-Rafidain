@@ -1,19 +1,3 @@
-/**
- * ════════════════════════════════════════════════════════════════
- *  ProblemDetail - تفاصيل البلاغ (نسخة مُصلحة)
- *  ════════════════════════════════════════════════════════════════
- *
- *  🔧 الإصلاحات المُطبّقة:
- *  ✅ 4 استخدام any → 0
- *  ✅ metadata?: any → Record<string, unknown>
- *  ✅ user: any → User
- *  ✅ (update: any) → RealtimeUpdate
- *  ✅ key as any → ProblemStatus
- *  ✅ تنظيف markdown artifacts + addToast المكسور
- *  ✅ catch blocks → getErrorMessage
- *  ════════════════════════════════════════════════════════════════
- */
-
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   ArrowRight, Clock, User as UserIcon, MessageSquare, Send, Paperclip,
@@ -21,491 +5,388 @@ import {
   Sparkles, Calendar, MapPin,
   AlertCircle, Loader2, Check, ChevronDown,
 } from 'lucide-react';
-import { useAuthStore, useUIStore } from '../../store';
-import {
-  fetchProblemById, fetchComments, addComment,
-  updateProblemStatus, subscribeToProblemUpdates,
-  type CommentDetail, type ProblemDetail as ProblemDetailType,
-  type AIAnalysis,
-} from '../../sdk/problems';
-import type { User } from '../../types';
-import Card from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { incidentService } from '../../services/sdk/IncidentService';
+import { incidentCommentService } from '../../services/sdk/IncidentCommentService';
+import type { CommentDetail } from '../../services/sdk/IncidentCommentService';
+import type { User } from '../../shared/types';
+import Card from '../../shared/components/ui/Card';
+import Badge from '../../shared/components/ui/Badge';
+import Button from '../../shared/components/ui/Button';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات
 // ════════════════════════════════════════════════════
 
-type ProblemStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
-type ProblemSeverity = 'low' | 'medium' | 'high' | 'critical';
-
-interface TimelineEvent {
-  id: string;
-  type: 'created' | 'status_changed' | 'commented' | 'assigned' | 'resolved' | 'closed';
-  description: string;
-  actor_name: string;
-  timestamp: string;
-  metadata?: Record<string, unknown>;
+interface AIAnalysis {
+  sentiment?: 'positive' | 'negative' | 'neutral';
+  sentimentScore?: number;
+  urgencyLevel?: number;
+  suggestedActions?: string[];
+  summary?: string;
+  tags?: string[];
+  predictedResolutionTime?: string;
+  [key: string]: unknown;
 }
 
-interface ProblemDetailUI {
+interface ProblemDetailData {
   id: string;
   title: string;
   description: string;
   category: string;
-  severity: ProblemSeverity;
-  status: ProblemStatus;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'in_progress' | 'resolved' | 'closed';
   is_anonymous: boolean;
   user_id?: string;
   created_at: string;
   updated_at?: string;
-  ai_analysis?: AIAnalysis;
-  comments?: CommentDetail[];
-  timeline?: TimelineEvent[];
-  employee_name?: string;
-  department?: string;
-  position?: string;
-  email?: string;
+  ai_analysis?: AIAnalysis | null;
 }
 
-interface RealtimeUpdate {
+type ProblemStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
+
+interface RealtimePayload {
   type?: string;
+  eventType?: string;
+  new?: Record<string, unknown>;
+  old?: Record<string, unknown>;
   data?: Record<string, unknown>;
 }
 
-// ════════════════════════════════════════════════════
-// ثوابت
-// ════════════════════════════════════════════════════
-
-const STATUS_CONFIG: Record<ProblemStatus, { label: string; icon: typeof Clock; color: string; bg: string; border: string }> = {
-  pending: { label: 'معلقة', icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
-  in_progress: { label: 'قيد المعالجة', icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
-  resolved: { label: 'محلولة', icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  closed: { label: 'مغلقة', icon: XCircle, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' },
+const STATUS_META: Record<ProblemStatus, { label: string; color: string; bg: string }> = {
+  pending:     { label: 'قيد الانتظار', color: 'text-amber-700', bg: 'bg-amber-100' },
+  in_progress: { label: 'قيد المعالجة', color: 'text-blue-700',  bg: 'bg-blue-100' },
+  resolved:    { label: 'تم الحل',      color: 'text-emerald-700', bg: 'bg-emerald-100' },
+  closed:      { label: 'مغلق',         color: 'text-slate-600',  bg: 'bg-slate-200' },
 };
 
-const SEVERITY_CONFIG: Record<ProblemSeverity, { label: string; color: string; textColor: string; bgLight: string }> = {
-  low: { label: 'منخفضة', color: 'bg-emerald-500', textColor: 'text-emerald-700', bgLight: 'bg-emerald-50' },
-  medium: { label: 'متوسطة', color: 'bg-amber-500', textColor: 'text-amber-700', bgLight: 'bg-amber-50' },
-  high: { label: 'عالية', color: 'bg-orange-500', textColor: 'text-orange-700', bgLight: 'bg-orange-50' },
-  critical: { label: 'حرجة', color: 'bg-red-500', textColor: 'text-red-700', bgLight: 'bg-red-50' },
+const SEVERITY_META = {
+  low:      { label: 'بسيط',   color: 'text-slate-600', bg: 'bg-slate-100' },
+  medium:   { label: 'متوسط',  color: 'text-amber-700', bg: 'bg-amber-100' },
+  high:     { label: 'عالي',   color: 'text-orange-700', bg: 'bg-orange-100' },
+  critical: { label: 'حرج',    color: 'text-red-700',   bg: 'bg-red-100' },
 };
 
-const CATEGORIES: Record<string, { label: string; icon: string }> = {
-  technical: { label: 'تقني', icon: '💻' },
-  hr: { label: 'موارد بشرية', icon: '👥' },
-  management: { label: 'إدارة', icon: '📊' },
-  workplace: { label: 'بيئة عمل', icon: '🏢' },
-  salary: { label: 'رواتب', icon: '💰' },
-  safety: { label: 'سلامة', icon: '🛡️' },
-  other: { label: 'أخرى', icon: '📝' },
-};
-
-// ════════════════════════════════════════════════════
-// Mock Data Helper
-// ════════════════════════════════════════════════════
-
-const getMockProblem = (id: string, user: User | null): ProblemDetailUI => ({
-  id,
-  title: 'مشكلة في جهاز الكمبيوتر',
-  description: 'الجهاز لا يعمل بشكل صحيح ويحتاج إلى صيانة عاجلة.',
-  category: 'technical',
-  severity: 'high',
-  status: 'in_progress',
-  is_anonymous: false,
-  employee_name: user?.full_name || 'أحمد محمد',
-  department: user?.department || 'تقنية المعلومات',
-  created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-  ai_analysis: {
-    urgencyLevel: 7,
-    sentiment: 'negative',
-    suggestedActions: ['إحالة لقسم الصيانة'],
-    tags: ['كمبيوتر', 'صيانة'],
-    summary: 'مشكلة في جهاز الكمبيوتر تحتاج صيانة عاجلة',
-    predictedResolutionTime: '2-3 أيام',
-  },
-  comments: [{
-    id: '1', incident_id: id, user_id: 'hr-1', text: 'تم استلام البلاغ',
-    is_internal: false, created_at: new Date(Date.now() - 7200000).toISOString(),
-    user_name: 'قسم HR', user_role: 'HR',
-  }],
-  timeline: [{
-    id: '1', type: 'created', description: 'تم رفع البلاغ',
-    actor_name: user?.full_name || 'موظف',
-    timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
-  }],
-});
-
-// ════════════════════════════════════════════════════
-// Main Component
-// ════════════════════════════════════════════════════
-
-export default function ProblemDetail({ problemId }: { problemId: string }) {
+export default function ProblemDetail() {
   const { user } = useAuthStore();
-  const { setActiveView, addToast } = useUIStore();
+  const { activeView, setActiveView, addToast } = useUIStore();
 
-  const [problem, setProblem] = useState<ProblemDetailUI | null>(null);
+  const problemId = useMemo(() => {
+    const parts = activeView.split(':');
+    return parts.length > 1 ? parts[1] : null;
+  }, [activeView]);
+
+  // ─── State ────────────────────────────────────────────────────
+  const [problem, setProblem] = useState<ProblemDetailData | null>(null);
   const [comments, setComments] = useState<CommentDetail[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingComments, setLoadingComments] = useState(false);
-  const [submittingComment, setSubmittingComment] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [isInternal, setIsInternal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sendingComment, setSendingComment] = useState(false);
+  const [badgeTrigger, setBadgeTrigger] = useState(0);
+  const commentEndRef = useRef<HTMLDivElement>(null);
 
-  const commentInputRef = useRef<HTMLTextAreaElement>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const userIdRef = useRef(user?.id);
-  const problemIdRef = useRef(problemId);
-
-  useEffect(() => {
-    userIdRef.current = user?.id;
-    problemIdRef.current = problemId;
-  }, [user?.id, problemId]);
-
-  const isHR = useMemo(() => user?.role === 'hr' || user?.role === 'admin', [user?.role]);
-
-  const generateTimeline = useCallback((problemData: ProblemDetailType): TimelineEvent[] => {
-    const timeline: TimelineEvent[] = [{
-      id: '1', type: 'created', description: 'تم رفع البلاغ',
-      actor_name: user?.full_name || 'موظف', timestamp: problemData.created_at,
-    }];
-
-    if (problemData.status !== 'pending') {
-      timeline.push({
-        id: '2', type: 'status_changed',
-        description: `تغيرت الحالة إلى: ${STATUS_CONFIG[problemData.status as ProblemStatus]?.label || problemData.status}`,
-        actor_name: 'نظام', timestamp: problemData.updated_at || problemData.created_at,
-        metadata: { status: problemData.status },
-      });
-    }
-    return timeline;
-  }, [user?.full_name]);
-
-  const fetchProblemComments = useCallback(async (pId: string) => {
-    setLoadingComments(true);
+  // ─── جلب البيانات ────────────────────────────────────────────
+  const fetchProblem = useCallback(async () => {
+    if (!problemId) return;
     try {
-      const dbComments = await fetchComments(pId);
-      setComments(dbComments);
-      setProblem((prev) => (prev ? { ...prev, comments: dbComments } : null));
+      const data = await incidentService.findById(problemId);
+      setProblem(data as ProblemDetailData | null);
     } catch (err) {
-      console.warn('⚠️ Error fetching comments:', getErrorMessage(err));
-    } finally {
-      setLoadingComments(false);
+      console.error('Error fetching problem:', getErrorMessage(err));
     }
-  }, []);
-
-  const fetchData = useCallback(async () => {
-    const currentUserId = userIdRef.current;
-    const currentProblemId = problemIdRef.current;
-    if (!currentProblemId) { setLoading(false); return; }
-
-    setLoading(true);
-    try {
-      const problemData = await fetchProblemById(currentProblemId, currentUserId);
-      if (problemData) {
-        const mappedProblem: ProblemDetailUI = {
-          ...problemData,
-          employee_name: user?.full_name,
-          department: user?.department,
-          position: user?.position,
-          email: user?.email,
-          comments: [],
-          timeline: generateTimeline(problemData),
-        };
-        setProblem(mappedProblem);
-        await fetchProblemComments(currentProblemId);
-      } else {
-        setProblem(getMockProblem(currentProblemId, user));
-        setComments([]);
-      }
-    } catch (err) {
-      console.error('❌ Error loading problem:', getErrorMessage(err));
-      setProblem(getMockProblem(currentProblemId, user));
-      setComments([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [user, generateTimeline, fetchProblemComments]);
-
-  const setupRealtimeUpdates = useCallback((pId: string) => {
-    try {
-      if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; }
-      unsubscribeRef.current = subscribeToProblemUpdates(pId, (update: RealtimeUpdate) => {
-        if (update.type === 'new_comment') fetchProblemComments(pId);
-        else fetchData();
-      });
-    } catch (err) {
-      console.warn('⚠️ Could not setup realtime:', getErrorMessage(err));
-    }
-  }, [fetchProblemComments, fetchData]);
-
-  useEffect(() => {
-    fetchData().then(() => setupRealtimeUpdates(problemId));
-    return () => { if (unsubscribeRef.current) { unsubscribeRef.current(); unsubscribeRef.current = null; } };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemId]);
 
-  const handleAddComment = useCallback(async () => {
-    if (!newComment.trim() || !user?.id || !problem) return;
-    setSubmittingComment(true);
+  const fetchCommentsData = useCallback(async () => {
+    if (!problemId) return;
     try {
-      const result = await addComment(problem.id, user.id, newComment, false);
-      if (result) {
-        setComments((prev) => [...prev, result]);
-        setProblem((prev) => prev ? {
-          ...prev,
-          timeline: [...(prev.timeline || []), {
-            id: Date.now().toString(), type: 'commented', description: 'تم إضافة تعليق',
-            actor_name: user.full_name || 'مستخدم', timestamp: new Date().toISOString(),
-          }],
-        } : null);
-        setNewComment('');
-        addToast('✅ تم إضافة التعليق', 'success');
-      }
+      const data = await incidentCommentService.findCommentsByIncident(problemId);
+      setComments(data);
     } catch (err) {
-      console.error('❌ Error adding comment:', getErrorMessage(err));
-      addToast('❌ فشل إضافة التعليق', 'error');
-    } finally {
-      setSubmittingComment(false);
+      console.error('Error fetching comments:', getErrorMessage(err));
     }
-  }, [newComment, user, problem, addToast]);
+  }, [problemId]);
 
-  const handleStatusChange = useCallback(async (newStatus: ProblemStatus) => {
-    if (!isHR || !problem) return;
-    setStatusUpdating(true);
+  useEffect(() => {
+    if (!problemId) return;
+    (async () => {
+      setLoading(true);
+      await Promise.all([fetchProblem(), fetchCommentsData()]);
+      setLoading(false);
+    })();
+  }, [problemId, fetchProblem, fetchCommentsData]);
+
+  // ─── Realtime subscription ────────────────────────────────────
+  useEffect(() => {
+    if (!problemId) return;
+
+    let channel: any = null;
+    let cancelled = false;
+
+    (async () => {
+      const { supabase } = await import('../../services/supabase/supabase');
+      if (cancelled) return;
+      channel = supabase
+        .channel(`problem-${problemId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'incidents', filter: `id=eq.${problemId}` },
+          async () => { if (!cancelled) await fetchProblem(); }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'incident_comments', filter: `incident_id=eq.${problemId}` },
+          async () => { if (!cancelled) await fetchCommentsData(); }
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) {
+        import('../../services/supabase/supabase').then(({ supabase }) => {
+          supabase.removeChannel(channel);
+        });
+      }
+    };
+  }, [problemId, fetchProblem, fetchCommentsData]);
+
+  // ─── Auto scroll ──────────────────────────────────────────────
+  useEffect(() => {
+    commentEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [comments]);
+
+  // ─── إضافة تعليق ──────────────────────────────────────────────
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !user?.id || !problemId) return;
+    setSendingComment(true);
     try {
-      const result = await updateProblemStatus(problem.id, newStatus);
-      if (result) {
-        setProblem((prev) => prev ? {
-          ...prev, status: newStatus, updated_at: new Date().toISOString(),
-          timeline: [...(prev.timeline || []), {
-            id: Date.now().toString(), type: 'status_changed',
-            description: `تغيرت الحالة إلى: ${STATUS_CONFIG[newStatus].label}`,
-            actor_name: user?.full_name || 'HR', timestamp: new Date().toISOString(),
-            metadata: { from: prev.status, to: newStatus },
-          }],
-        } : null);
-        setShowStatusMenu(false);
-        addToast(`✅ تم تغيير الحالة إلى ${STATUS_CONFIG[newStatus].label}`, 'success');
-      }
+      await incidentCommentService.addComment({
+        incident_id: problemId,
+        user_id: user.id,
+        text: newComment.trim(),
+        is_internal: isInternal,
+      });
+      setNewComment('');
+      setIsInternal(false);
+      await fetchCommentsData();
+      setBadgeTrigger(prev => prev + 1);
     } catch (err) {
-      console.error('❌ Error:', getErrorMessage(err));
-      addToast('❌ فشل تغيير الحالة', 'error');
+      addToast('فشل إرسال التعليق: ' + getErrorMessage(err), 'error');
     } finally {
-      setStatusUpdating(false);
+      setSendingComment(false);
     }
-  }, [isHR, problem, user, addToast]);
+  };
 
-  const handleGoBack = useCallback(() => setActiveView('employee-problems'), [setActiveView]);
+  // ─── تحديث الحالة ─────────────────────────────────────────────
+  const handleStatusChange = async (newStatus: ProblemStatus) => {
+    if (!problemId) return;
+    try {
+      await incidentService.updateStatus(problemId, newStatus);
+      await fetchProblem();
+      addToast(`تم تحديث الحالة إلى ${STATUS_META[newStatus].label}`, 'success');
+    } catch (err) {
+      addToast('فشل تحديث الحالة: ' + getErrorMessage(err), 'error');
+    }
+  };
+
+  // ════════════════════════════════════════════════════
+  //  التحميل
+  // ════════════════════════════════════════════════════
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="animate-spin w-12 h-12 text-indigo-600 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium">جاري التحميل...</p>
-        </div>
+        <Loader2 className="animate-spin text-indigo-600" size={32} />
       </div>
     );
   }
 
   if (!problem) {
     return (
-      <div className="text-center py-12">
-        <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-        <h3 className="text-lg font-bold text-slate-800 mb-2">لم يتم العثور على البلاغ</h3>
-        <Button onClick={handleGoBack} variant="outline"><ArrowRight size={16} className="ml-2" /> العودة للقائمة</Button>
+      <div className="text-center py-20">
+        <AlertCircle size={48} className="mx-auto text-slate-300 mb-4" />
+        <h3 className="text-lg font-bold text-slate-700">البلاغ غير موجود</h3>
+        <p className="text-sm text-slate-500 mt-2">قد يكون قد تم حذفه أو أن الرابط غير صحيح</p>
+        <Button variant="outline" onClick={() => setActiveView('employee-problems')} className="mt-4">
+          العودة إلى البلاغات
+        </Button>
       </div>
     );
   }
 
-  const statusConfig = STATUS_CONFIG[problem.status];
-  const severityConfig = SEVERITY_CONFIG[problem.severity];
-  const category = CATEGORIES[problem.category];
-  const StatusIcon = statusConfig.icon;
+  const statusMeta = STATUS_META[problem.status] || STATUS_META.pending;
+  const severityMeta = SEVERITY_META[problem.severity] || SEVERITY_META.medium;
+
+  // ════════════════════════════════════════════════════
+  //  العرض
+  // ════════════════════════════════════════════════════
 
   return (
-    <div className="space-y-6 animate-fade-in" dir="rtl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <button onClick={handleGoBack} className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors">
-          <ArrowRight size={20} /><span className="font-medium">العودة للبلاغات</span>
-        </button>
-      </div>
+    <div className="max-w-4xl mx-auto p-4 space-y-6 animate-fade-in" dir="rtl">
+      {/* زر الرجوع */}
+      <button
+        onClick={() => setActiveView('employee-problems')}
+        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+      >
+        <ArrowRight size={16} /> العودة إلى البلاغات
+      </button>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Problem Card */}
-          <Card>
-            <div className="p-6">
-              <div className="flex items-start justify-between gap-4 mb-6">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Badge variant="neutral" size="sm"><span className="ml-1">{category?.icon}</span>{category?.label}</Badge>
-                    {problem.is_anonymous && <Badge variant="neutral" size="sm">مجهول</Badge>}
-                  </div>
-                  <h1 className="text-2xl font-extrabold text-slate-800 mb-2">{problem.title}</h1>
-                  <div className="flex items-center gap-4 text-sm text-slate-500">
-                    <div className="flex items-center gap-1.5"><Calendar size={14} /><span>{format(new Date(problem.created_at), 'PPp', { locale: ar })}</span></div>
-                    <div className="flex items-center gap-1.5"><Clock size={14} /><span>#{problem.id}</span></div>
-                  </div>
-                </div>
+      {/* البطاقة الرئيسية */}
+      <Card>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xl font-bold text-slate-900">{problem.title}</h2>
+            <div className="flex items-center gap-2 mt-2 text-sm text-slate-500">
+              <Calendar size={14} />
+              <span>
+                {problem.created_at ? format(new Date(problem.created_at), 'dd MMMM yyyy - hh:mm a', { locale: ar }) : ''}
+              </span>
+              <MapPin size={14} className="mr-2" />
+              <span>قسم: {problem.category || 'عام'}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${statusMeta.bg} ${statusMeta.color}`}>
+              {statusMeta.label}
+            </span>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${severityMeta.bg} ${severityMeta.color}`}>
+              {severityMeta.label}
+            </span>
+          </div>
+        </div>
 
-                <div className="flex flex-col items-end gap-2">
-                  <div className="relative">
-                    <button onClick={() => isHR && setShowStatusMenu(!showStatusMenu)} disabled={!isHR}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${statusConfig.border} ${statusConfig.bg} ${statusConfig.color} font-bold text-sm transition-all ${isHR ? 'cursor-pointer hover:shadow-md' : 'cursor-default'}`}>
-                      <StatusIcon size={16} /><span>{statusConfig.label}</span>{isHR && <ChevronDown size={14} />}
-                    </button>
-                    {showStatusMenu && isHR && (
-                      <div className="absolute left-0 top-12 w-48 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-10">
-                        {(Object.keys(STATUS_CONFIG) as ProblemStatus[]).map((key) => {
-                          const cfg = STATUS_CONFIG[key];
-                          const Icon = cfg.icon;
-                          return (
-                            <button key={key} onClick={() => handleStatusChange(key)} disabled={statusUpdating}
-                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors disabled:opacity-50">
-                              <Icon size={16} className={cfg.color} />
-                              <span className="text-sm font-medium text-slate-700">{cfg.label}</span>
-                              {problem.status === key && <Check size={14} className="text-emerald-500 mr-auto" />}
-                            </button>
-                          );
-                        })}
-                      </div>
+        {/* الوصف */}
+        <div className="bg-slate-50 rounded-xl p-4 mb-4">
+          <p className="text-sm text-slate-700 whitespace-pre-wrap">{problem.description}</p>
+        </div>
+
+        {/* تحليل AI */}
+        {problem.ai_analysis && (
+          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 mb-4 border border-purple-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles size={16} className="text-purple-600" />
+              <span className="text-sm font-bold text-purple-800">تحليل ذكي</span>
+            </div>
+            {problem.ai_analysis.summary && (
+              <p className="text-sm text-slate-600">{problem.ai_analysis.summary}</p>
+            )}
+            {problem.ai_analysis.tags && problem.ai_analysis.tags.length > 0 && (
+              <div className="flex gap-1 mt-2 flex-wrap">
+                {problem.ai_analysis.tags.map((tag, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-white rounded-full text-xs font-medium text-purple-600 border border-purple-200">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* أزرار تغيير الحالة */}
+        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
+          <span className="text-sm font-medium text-slate-600 ml-2">تحديث الحالة:</span>
+          {(['pending', 'in_progress', 'resolved', 'closed'] as ProblemStatus[]).map((status) => {
+            const m = STATUS_META[status];
+            const isActive = problem.status === status;
+            return (
+              <button
+                key={status}
+                onClick={() => handleStatusChange(status)}
+                disabled={isActive || !user?.id}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  isActive
+                    ? `${m.bg} ${m.color} cursor-default`
+                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100 cursor-pointer'
+                }`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* التعليقات */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+            <MessageSquare size={16} /> التعليقات ({comments.length})
+          </h3>
+        </div>
+
+        {/* قائمة التعليقات */}
+        <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
+          {comments.length === 0 ? (
+            <p className="text-center py-6 text-slate-400 text-sm">لا توجد تعليقات بعد</p>
+          ) : (
+            comments.map((comment) => (
+              <div
+                key={comment.id}
+                className={`p-3 rounded-xl ${comment.is_internal ? 'bg-amber-50 border border-amber-100' : 'bg-slate-50'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <UserIcon size={14} className="text-slate-400" />
+                    <span className="text-sm font-bold text-slate-700">{comment.user_name || 'مستخدم'}</span>
+                    {comment.user_role && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 font-medium">
+                        {comment.user_role}
+                      </span>
+                    )}
+                    {comment.is_internal && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-200 text-amber-700 font-medium">
+                        داخلي
+                      </span>
                     )}
                   </div>
-                  <div className={`flex items-center gap-2 px-4 py-2 rounded-xl ${severityConfig.bgLight}`}>
-                    <div className={`w-2 h-2 rounded-full ${severityConfig.color}`} />
-                    <span className={`text-sm font-bold ${severityConfig.textColor}`}>{severityConfig.label}</span>
-                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    {format(new Date(comment.created_at), 'hh:mm a')}
+                  </span>
                 </div>
+                <p className="text-sm text-slate-600">{comment.text}</p>
               </div>
-
-              <div className={`w-full h-1.5 rounded-full ${severityConfig.color} mb-6`} />
-              <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{problem.description}</p>
-            </div>
-          </Card>
-
-          {/* AI Analysis */}
-          {problem.ai_analysis && (
-            <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-100">
-              <div className="p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-2 bg-indigo-100 rounded-lg"><Sparkles size={20} className="text-indigo-600" /></div>
-                  <h3 className="text-lg font-bold text-indigo-900">التحليل الذكي</h3>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-indigo-700">مستوى الإلحاح</span>
-                      <span className="text-lg font-bold text-indigo-900">{problem.ai_analysis.urgencyLevel}/10</span>
-                    </div>
-                    <div className="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${problem.ai_analysis.urgencyLevel >= 8 ? 'bg-red-500' : problem.ai_analysis.urgencyLevel >= 5 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${problem.ai_analysis.urgencyLevel * 10}%` }} />
-                    </div>
-                  </div>
-                  {problem.ai_analysis.suggestedActions && problem.ai_analysis.suggestedActions.length > 0 && (
-                    <div className="p-4 bg-white/60 rounded-xl">
-                      <p className="text-sm font-medium text-indigo-700 mb-1">الإجراء المقترح:</p>
-                      <p className="text-sm text-indigo-900">{problem.ai_analysis.suggestedActions.join('، ')}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Card>
+            ))
           )}
-
-          {/* Comments */}
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-6">
-                <MessageSquare size={20} className="text-indigo-600" />
-                <h3 className="text-lg font-bold text-slate-800">التعليقات</h3>
-                {comments.length > 0 && <Badge variant="neutral" size="sm">{comments.length}</Badge>}
-              </div>
-              <div className="space-y-4 mb-6">
-                {loadingComments ? (
-                  <div className="flex items-center justify-center py-6"><Loader2 className="animate-spin text-indigo-600" size={20} /></div>
-                ) : comments.length > 0 ? (
-                  comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{comment.user_name?.charAt(0) || 'م'}</div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-bold text-slate-800">{comment.user_name}</span>
-                          {comment.user_role && <Badge variant="neutral" size="sm">{comment.user_role}</Badge>}
-                          <span className="text-xs text-slate-400">{format(new Date(comment.created_at), 'PPp', { locale: ar })}</span>
-                        </div>
-                        <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3">{comment.text}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-400 text-center py-6">لا توجد تعليقات</p>
-                )}
-              </div>
-              <div className="space-y-3 border-t border-slate-100 pt-6">
-                <textarea ref={commentInputRef} value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="أضف تعليقاً..." rows={3} className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
-                <div className="flex items-center justify-between">
-                  <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><Paperclip size={18} className="text-slate-400" /></button>
-                  <Button onClick={handleAddComment} disabled={submittingComment || !newComment.trim()} icon={submittingComment ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} size="sm">{submittingComment ? 'جاري الإرسال...' : 'إرسال'}</Button>
-                </div>
-              </div>
-            </div>
-          </Card>
+          <div ref={commentEndRef} />
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {!problem.is_anonymous && problem.employee_name && (
-            <Card>
-              <div className="p-5">
-                <h3 className="text-sm font-bold text-slate-700 mb-4">معلومات الموظف</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <UserIcon size={16} className="text-slate-400" />
-                    <div><p className="text-xs text-slate-500">الاسم</p><p className="text-sm font-medium text-slate-800">{problem.employee_name}</p></div>
-                  </div>
-                  {problem.department && (
-                    <div className="flex items-center gap-3">
-                      <MapPin size={16} className="text-slate-400" />
-                      <div><p className="text-xs text-slate-500">القسم</p><p className="text-sm font-medium text-slate-800">{problem.department}</p></div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {problem.timeline && problem.timeline.length > 0 && (
-            <Card>
-              <div className="p-5">
-                <h3 className="text-sm font-bold text-slate-700 mb-4">السجل الزمني</h3>
-                <div className="space-y-4">
-                  {problem.timeline.map((event, idx) => (
-                    <div key={event.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-indigo-500' : 'bg-slate-300'}`} />
-                        {idx < problem.timeline!.length - 1 && <div className="w-0.5 h-full bg-slate-200 mt-1" />}
-                      </div>
-                      <div className="flex-1 pb-4">
-                        <p className="text-sm font-medium text-slate-800">{event.description}</p>
-                        <p className="text-xs text-slate-500 mt-1">بواسطة {event.actor_name}</p>
-                        <p className="text-xs text-slate-400 mt-1">{format(new Date(event.timestamp), 'PPp', { locale: ar })}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          )}
-        </div>
-      </div>
+        {/* إضافة تعليق */}
+        {user?.id && (
+          <div className="border-t border-slate-100 pt-4">
+            <textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="أكتب تعليقك هنا..."
+              rows={2}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
+            />
+            <div className="flex items-center justify-between mt-2">
+              <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isInternal}
+                  onChange={(e) => setIsInternal(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                تعليق داخلي (للمشرفين فقط)
+              </label>
+              <Button
+                size="sm"
+                onClick={handleAddComment}
+                loading={sendingComment}
+                icon={<Send size={14} />}
+                iconPosition="left"
+              >
+                إرسال
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

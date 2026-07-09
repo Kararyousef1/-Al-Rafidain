@@ -3,13 +3,13 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Briefcase, Plus, Loader2, Eye, Users, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { jobPostingService, jobApplicationService } from '../../services/sdk';
+import { getErrorMessage } from '../../services/errors';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import type { JobPosting, JobApplication, JobStatus, ApplicationStatus } from '../../types/hrModules';
-import { JOB_STATUS_LABELS, APPLICATION_STATUS_LABELS } from '../../types/hrModules';
+import type { JobPosting, JobApplication, JobStatus, ApplicationStatus } from '../../shared/types/hrModules';
+import { JOB_STATUS_LABELS, APPLICATION_STATUS_LABELS } from '../../shared/types/hrModules';
 import { Modal, FormField, ModalActions } from './LoansPage';
 
 export default function RecruitmentPage() {
@@ -27,10 +27,7 @@ export default function RecruitmentPage() {
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('job_postings')
-        .select('*').order('created_at', { ascending: false });
-      if (error) throw error;
+      const data = await jobPostingService.findAllPostings();
       setJobs((data || []) as JobPosting[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
@@ -47,14 +44,13 @@ export default function RecruitmentPage() {
       return;
     }
     try {
-      const { error } = await supabase.from('job_postings').insert({
+      await jobPostingService.createPosting({
         ...form,
         salary_min: Number(form.salary_min) || null,
         salary_max: Number(form.salary_max) || null,
         status: 'open',
         posted_date: new Date().toISOString(),
-      });
-      if (error) throw error;
+      } as unknown as Record<string, unknown>);
       addToast('تم إنشاء إعلان الوظيفة', 'success');
       setShowCreate(false);
       setForm({ title: '', description: '', position: '', employment_type: 'full_time', salary_min: 0, salary_max: 0, vacancy_count: 1, closing_date: '' });
@@ -67,8 +63,7 @@ export default function RecruitmentPage() {
   const handleViewApplications = async (job: JobPosting) => {
     setSelectedJob(job);
     try {
-      const { data } = await supabase.from('job_applications')
-        .select('*').eq('job_id', job.id).order('applied_at', { ascending: false });
+      const data = await jobApplicationService.findByJob(job.id);
       setApplications((data || []) as JobApplication[]);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');
@@ -77,8 +72,7 @@ export default function RecruitmentPage() {
 
   const handleStatusChange = async (app: JobApplication, status: ApplicationStatus) => {
     try {
-      const { error } = await supabase.from('job_applications').update({ status }).eq('id', app.id);
-      if (error) throw error;
+      await jobApplicationService.updateStatus(app.id, status);
       if (selectedJob) await handleViewApplications(selectedJob);
     } catch (err) {
       addToast(getErrorMessage(err), 'error');

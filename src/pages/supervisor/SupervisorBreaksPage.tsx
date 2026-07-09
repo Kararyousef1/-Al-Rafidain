@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
-import Toast from '../../components/ui/Toast';
+import { supabase } from '../../services/supabase/supabase';
+import { useAuthStore } from '../../core/stores';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Input from '../../shared/components/ui/Input';
+import Toast from '../../shared/components/ui/Toast';
 import { Clock, Users, ArrowRightLeft, CheckCircle, Lock } from 'lucide-react';
 
 export default function SupervisorBreaksPage() {

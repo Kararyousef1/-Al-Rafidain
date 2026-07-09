@@ -17,14 +17,14 @@
 
 import { useState } from 'react';
 import { ChevronRight, Eye, EyeOff, Sparkles, Send, Info } from 'lucide-react';
-import { useAuthStore, useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import { notifyRole } from '../../lib/notificationService';
-import Card from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Input, { TextArea, Select } from '../../components/ui/Input';
-import Badge from '../../components/ui/Badge';
-import { ProblemCategory, ProblemSeverity } from '../../types';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { supabase } from '../../services/supabase/supabase';
+import { notifyRole } from '../../services/notifications/notificationService';
+import Card from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Input, { TextArea, Select } from '../../shared/components/ui/Input';
+import Badge from '../../shared/components/ui/Badge';
+import { ProblemCategory, ProblemSeverity } from '../../shared/types';
 
 // ════════════════════════════════════════════════════════════════
 //  ثوابت مساعدة (تقليل التكرار)

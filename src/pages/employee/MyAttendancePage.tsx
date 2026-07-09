@@ -19,17 +19,18 @@ import {
   Sun, Moon, Sunrise, ChevronRight, ChevronLeft,
   AlertTriangle,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store';
+import { useAuthStore } from '../../core/stores';
+import { employeeService } from '../../services/sdk/EmployeeService';
+import { attendanceService, attendanceSummaryService } from '../../services/sdk/AttendanceService';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
 import {
   determineShift, calculateLateMinutes,
   calculateTotalHours,
   ShiftType,
 } from '../../utils/shiftUtils';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع البيانات (محلّية - تحلّ محل any)
@@ -125,12 +126,13 @@ export default function MyAttendancePage() {
   useEffect(() => {
     if (!user?.id) return;
     const getEmployeeId = async () => {
-      const { data } = await supabase
-        .from('employees')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
-      if (data) setEmployeeId((data as { id: string }).id);
+      const employees = await employeeService.findAll({
+        filters: { user_id: user.id },
+        limit: 1,
+      });
+      if (employees.length > 0) {
+        setEmployeeId(employees[0].id);
+      }
     };
     getEmployeeId();
   }, [user]);
@@ -144,25 +146,21 @@ export default function MyAttendancePage() {
       const endDate = format(new Date(currentYear, currentMonth + 1, 0), 'yyyy-MM-dd');
       const today = format(new Date(), 'yyyy-MM-dd');
 
-      const [logsRes, summaryRes] = await Promise.all([
-        supabase
-          .from('attendance_logs')
-          .select('*')
-          .eq('employee_id', employeeId)
-          .gte('shift_date', startDate)
-          .lte('shift_date', endDate)
-          .order('punch_time', { ascending: false }),
-        supabase
-          .from('attendance_summary')
-          .select('*')
-          .eq('employee_id', employeeId)
-          .gte('shift_date', startDate)
-          .lte('shift_date', endDate)
-          .order('shift_date', { ascending: false }),
+      const [logsData, summaryData] = await Promise.all([
+        attendanceService.findAll({
+          filters: { employee_id: employeeId },
+          orderBy: 'punch_time',
+          ascending: false,
+        }),
+        attendanceSummaryService.findAll({
+          filters: { employee_id: employeeId },
+          orderBy: 'shift_date',
+          ascending: false,
+        }),
       ]);
 
-      const logsData = (logsRes.data as AttendanceLogRecord[] | null) || [];
-      const summaryData = (summaryRes.data as AttendanceSummaryRecord[] | null) || [];
+      const logsList = (logsData || []) as AttendanceLogRecord[];
+      const summaryList = (summaryData || []) as AttendanceSummaryRecord[];
 
       setLogs(logsData);
       setSummary(summaryData);

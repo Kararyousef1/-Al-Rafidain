@@ -20,17 +20,18 @@ import {
   Plus, Trash2, Loader, Camera, LayoutTemplate, Briefcase,
   GraduationCap, Languages, Smile, FileText,
 } from 'lucide-react';
-import { useAuthStore, useUIStore } from '../../store';
-import { supabase } from '../../lib/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
-import Badge from '../../components/ui/Badge';
-import Input from '../../components/ui/Input';
+import { useAuthStore, useUIStore } from '../../core/stores';
+import { userService } from '../../services/sdk/UserService';
+import { supabase } from '../../services/supabase/supabase';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
+import Badge from '../../shared/components/ui/Badge';
+import Input from '../../shared/components/ui/Input';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { isLocalUser } from '../../lib/utils';
-import { getErrorMessage } from '../../lib/errors';
-import type { User as UserType } from '../../types';
+import { isLocalUser } from '../../services/utils';
+import { getErrorMessage } from '../../services/errors';
+import type { User as UserType } from '../../shared/types';
 
 // ════════════════════════════════════════════════════
 // أنواع بيانات السيرة الذاتية (CV) — تحلّ محل any
@@ -134,11 +135,7 @@ export default function ProfilePage() {
         return;
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: form.name, phone: form.phone })
-        .eq('id', user.id);
-      if (error) throw error;
+      await userService.updateUser(user.id, { full_name: form.name, phone: form.phone });
 
       updateUser({ full_name: form.name, phone: form.phone });
       setEditing(false);
@@ -161,24 +158,12 @@ export default function ProfilePage() {
       }
 
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('profile_image, cv_data')
-          .eq('id', user.id)
-          .single();
+        const userProfile = await userService.findUserById(user.id);
 
-        if (error) throw error;
-
-        if (data) {
-          const profileRow = data as { profile_image?: string; cv_data?: unknown };
-
-          if (profileRow.profile_image) {
-            setProfileImage(profileRow.profile_image);
-            updateUser({ profile_image: profileRow.profile_image });
-          }
-
-          if (profileRow.cv_data && typeof profileRow.cv_data === 'object') {
-            setCvData(normalizeCvData(profileRow.cv_data));
+        if (userProfile) {
+          if (userProfile.profile_image) {
+            setProfileImage(userProfile.profile_image);
+            updateUser({ profile_image: userProfile.profile_image });
           }
         }
       } catch (err) {
@@ -215,11 +200,7 @@ export default function ProfilePage() {
       const { data: urlData } = supabase.storage.from('public-assets').getPublicUrl(`profiles/${fileName}`);
       setProfileImage(urlData.publicUrl);
 
-      const { error: dbError } = await supabase
-        .from('profiles')
-        .update({ profile_image: urlData.publicUrl })
-        .eq('id', user.id);
-      if (dbError) throw dbError;
+      await userService.updateUser(user.id, { profile_image: urlData.publicUrl });
 
       updateUser({ profile_image: urlData.publicUrl });
       addToast('تم رفع الصورة بنجاح', 'success');
@@ -241,8 +222,7 @@ export default function ProfilePage() {
         return;
       }
 
-      const { error } = await supabase.from('profiles').update({ cv_data: cvData }).eq('id', user.id);
-      if (error) throw error;
+      await userService.updateUser(user.id, { cv_data: cvData as unknown as Record<string, unknown> });
       addToast('تم حفظ السيرة الذاتية بنجاح وتحديثها في سجل الإدارة', 'success');
       setShowCvBuilder(false);
     } catch (err) {
@@ -257,8 +237,7 @@ export default function ProfilePage() {
     setCvData({ ...EMPTY_CV });
     if (!isLocalUser(user.id)) {
       try {
-        const { error } = await supabase.from('profiles').update({ cv_data: {} }).eq('id', user.id);
-        if (error) throw error;
+        await userService.updateUser(user.id, { cv_data: {} });
       } catch (err) {
         console.error('فشل حذف السيرة الذاتية:', getErrorMessage(err));
       }

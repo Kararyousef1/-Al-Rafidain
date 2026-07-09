@@ -15,9 +15,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../sdk/supabase';
-import Card, { CardHeader, CardTitle } from '../../components/ui/Card';
-import Button from '../../components/ui/Button';
+import { userService } from '../../services/sdk/UserService';
+import { gatekeeperSessionService, gatekeeperVisitorLogService, movementLogService } from '../../services/sdk/GatekeeperService';
+import { reviewService } from '../../services/sdk/ReviewService';
+import Card, { CardHeader, CardTitle } from '../../shared/components/ui/Card';
+import Button from '../../shared/components/ui/Button';
 import {
   Download, Users, ArrowRightLeft, Calendar, BarChart3, Clock,
   Loader, Archive, Search, BellRing, Key, Star, MessageSquare,
@@ -25,8 +27,8 @@ import {
 import { format, subDays, startOfMonth, startOfYear, differenceInSeconds } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { useUIStore } from '../../store';
-import { getErrorMessage } from '../../lib/errors';
+import { useUIStore } from '../../core/stores';
+import { getErrorMessage } from '../../services/errors';
 
 // ════════════════════════════════════════════════════
 // أنواع السجلات (تحلّ محل any)
@@ -138,23 +140,23 @@ export default function HRMovementAnalyticsPage() {
         }
         const dateStr = startDate.toISOString();
 
-        const [{ data: emps }, { data: movs }, { data: vis }, { data: arch }, { data: handovers }, { data: endRequests }, { data: reviews }] = await Promise.all([
-          supabase.from('profiles').select('id, full_name, department'),
-          supabase.from('movements_log').select('*').gte('departure_at', dateStr).order('departure_at', { ascending: false }),
-          supabase.from('gatekeeper_visitor_logs').select('*, visitor:gatekeeper_visitors(*)').gte('check_in_time', dateStr).order('check_in_time', { ascending: false }),
-          supabase.from('gatekeeper_sessions').select('*').eq('is_active', false).order('ended_at', { ascending: false }),
-          supabase.from('gatekeeper_sessions').select('*').eq('is_active', true).eq('handover_status', 'pending'),
-          supabase.from('gatekeeper_sessions').select('*').eq('is_active', true).eq('handover_status', 'pending_end'),
-          supabase.from('customer_reviews').select('*').gte('created_at', dateStr).order('created_at', { ascending: false }),
+        const [emps, movs, vis, arch, handovers, endRequests, reviews] = await Promise.all([
+          userService.findAllUsers(),
+          movementLogService.findMovements({ fromDate: dateStr }),
+          gatekeeperVisitorLogService.findVisitorLogs({ fromDate: dateStr }),
+          gatekeeperSessionService.findEndedSessions(),
+          gatekeeperSessionService.findAll({ filters: { is_active: true, handover_status: 'pending' } }),
+          gatekeeperSessionService.findAll({ filters: { is_active: true, handover_status: 'pending_end' } }),
+          reviewService.findLatest(100),
         ]);
 
-        setEmployees((emps as EmployeeBasic[] | null) || []);
-        setMovementsData((movs as MovementRecord[] | null) || []);
-        setVisitorsData((vis as VisitorLogRecord[] | null) || []);
-        setArchivedSessions((arch as GatekeeperSession[] | null) || []);
-        setPendingHandovers((handovers as GatekeeperSession[] | null) || []);
-        setPendingEndRequests((endRequests as GatekeeperSession[] | null) || []);
-        setReviewsData((reviews as CustomerReview[] | null) || []);
+        setEmployees((emps || []) as EmployeeBasic[]);
+        setMovementsData((movs || []) as MovementRecord[]);
+        setVisitorsData((vis || []) as VisitorLogRecord[]);
+        setArchivedSessions((arch || []) as GatekeeperSession[]);
+        setPendingHandovers((handovers || []) as GatekeeperSession[]);
+        setPendingEndRequests((endRequests || []) as GatekeeperSession[]);
+        setReviewsData((reviews || []) as CustomerReview[]);
       } catch (error) {
         console.error('Data load error:', getErrorMessage(error));
       } finally {
@@ -193,8 +195,7 @@ export default function HRMovementAnalyticsPage() {
   const handleApproveHandover = async (session: GatekeeperSession) => {
     const tempPin = Math.floor(100 + Math.random() * 900).toString();
     try {
-      const { error } = await supabase.from('gatekeeper_sessions').update({ handover_status: 'approved', temp_pin: tempPin }).eq('id', session.id);
-      if (error) throw error;
+      await gatekeeperSessionService.updateHandoverStatus(session.id.toString(), 'approved', tempPin);
       setPendingHandovers((prev) => prev.filter((s) => s.id !== session.id));
       addToast(`تمت الموافقة! الرمز المؤقت للحارس البديل: [ ${tempPin} ] — أخبره فوراً`, 'success');
     } catch (err) {
@@ -205,12 +206,7 @@ export default function HRMovementAnalyticsPage() {
   // ── الموافقة على إنهاء الوردية ─────────────────────────────────
   const handleApproveEndShift = async (session: GatekeeperSession) => {
     try {
-      const { error } = await supabase.from('gatekeeper_sessions').update({
-        is_active: false,
-        ended_at: new Date().toISOString(),
-        handover_status: 'approved_end',
-      }).eq('id', session.id);
-      if (error) throw error;
+      await gatekeeperSessionService.endSession(session.id.toString());
       setPendingEndRequests((prev) => prev.filter((s) => s.id !== session.id));
       addToast('تم الموافقة على إنهاء الوردية', 'success');
     } catch (err) {
@@ -357,7 +353,7 @@ export default function HRMovementAnalyticsPage() {
   const handleExportArchivedVisitors = async (session: GatekeeperSession) => {
     addToast(`جاري استخراج سجل الزوار لـ ${session.session_name}...`, 'info');
     try {
-      const { data: visData } = await supabase.from('gatekeeper_visitor_logs').select('*, visitor:gatekeeper_visitors(*)').eq('session_id', session.id);
+      const visData = await gatekeeperVisitorLogService.findVisitorLogs({ sessionId: session.id.toString() });
       const visRecords = (visData as VisitorLogRecord[] | null) || [];
       if (visRecords.length === 0) { addToast('لا يوجد زوار في هذه الوردية', 'warning'); return; }
 
@@ -379,7 +375,7 @@ export default function HRMovementAnalyticsPage() {
   const handleExportArchivedMovements = async (session: GatekeeperSession) => {
     addToast(`جاري استخراج حركة الموظفين لـ ${session.session_name}...`, 'info');
     try {
-      const { data: movData } = await supabase.from('movements_log').select('*').gte('departure_at', session.started_at).lte('departure_at', session.ended_at || new Date().toISOString());
+      const movData = await movementLogService.findMovements({ fromDate: session.started_at });
       const movRecords = (movData as MovementRecord[] | null) || [];
       if (movRecords.length === 0) { addToast('لا توجد حركات موظفين في هذه الوردية', 'warning'); return; }
 
