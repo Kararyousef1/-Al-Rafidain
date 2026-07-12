@@ -1,49 +1,41 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  صفحة تسجيل الدخول - نظام الرافدين HR
- *  (إعادة تصميم — بطاقة زجاجية Glassmorphism)
+ *  LoginPage - صفحة تسجيل الدخول (نقطة التجميع)
+ *  نظام الرافدين HR
+ * ════════════════════════════════════════════════════════════════
  *
- *  🔒 الأمان (محفوظ كما هو):
- *  1. لا localStorage.setItem('user') بعد تسجيل الدخول
- *     → المصادقة تعتمد على Supabase Session فقط
- *  2. نطاق البريد الموحَّد: @alrafidain.com
- *  3. حماية ضد Brute Force (rate limit) في sessionStorage
- *  4. مؤقت تلقائي لمسح رسالة الخطأ
- *  5. زر إظهار/إخفاء كلمة المرور مع aria-label
+ *  🔒 الأمان:
+ *  1. المصادقة تعتمد على Supabase Session فقط — لا localStorage.setItem('user')
+ *  2. نطاق البريد الموحَّد: EMAIL_DOMAIN
+ *  3. حماية Brute Force عبر useLoginSecurity (طبقة عميل إضافية)
+ *  4. بعد نجاح storeLogin، يضبط AuthService.setSessionContext()
+ *     تلقائياً app.current_role / app.current_tenant_id في Postgres —
+ *     بدون هذا لا تعمل RLS policies فعلياً (انظر AuthService.ts)
  *
- *  ✨ التحسينات في هذه النسخة:
- *  • تصميم زجاجي عصري (backdrop-blur + aurora متحركة)
- *  • زر "العودة للرئيسية" لإخراج المستخدم من الفخ
- *  • إزالة window.location.href = '/' — الاعتماد على store فقط
- *  • شريط ثقة (مشفّر / سريع / موثوق) لإحساس احترافي
+ *  هذا الملف مسؤول فقط عن التجميع وربط استدعاء تسجيل الدخول.
+ *  التصميم البصري في LoginBackground، الحقول في LoginForm،
+ *  ومنطق الحماية في useLoginSecurity.
  * ════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import {
-  Eye, EyeOff, AlertCircle, CheckCircle2, Loader2,
-  ShieldCheck, ArrowRight, Lock, Zap, ArrowLeft,
-} from 'lucide-react';
-import { supabase } from '../../services/supabase/supabase';
+import { useState, useCallback, useEffect } from 'react';
+import { ShieldCheck, ArrowLeft, Lock, Zap } from 'lucide-react';
 import { useAuthStore } from '../../core/stores';
+import LoginBackground from './LoginBackground';
+import LoginForm from './LoginForm';
+import { useLoginSecurity } from './useLoginSecurity';
+import './login.css';
+
+const EMAIL_DOMAIN = '@alrafidain.com';
 
 interface LoginPageProps {
   onNavigate?: (page: string) => void;
   onBack?: () => void;
 }
 
-// ── ثوابت ──────────────────────────────────────────────────────
-const EMAIL_DOMAIN = '@alrafidain.com';
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 دقائق
-
-// ── مفتاح تخزين Brute Force (مؤقت فقط — بدون بيانات مستخدم) ──
-const ATTEMPT_KEY = 'login_attempts';
-const LOCKOUT_KEY = 'login_lockout';
-
-// ════════════════════════════════════════════════════════════════
-export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
+export default function LoginPage({ onBack }: LoginPageProps) {
   const { login: storeLogin } = useAuthStore();
+  const security = useLoginSecurity();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -51,95 +43,23 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [remainingLockout, setRemainingLockout] = useState(0);
 
-  // ── فحص الـ lockout عند التحميل ──────────────────────────────
-  useEffect(() => {
-    checkLockout();
-    const interval = setInterval(() => {
-      const remaining = getLockoutRemaining();
-      setRemainingLockout(remaining);
-      if (remaining === 0) clearInterval(interval);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── مسح رسالة الخطأ بعد 6 ثوانٍ ────────────────────────────
+  // مسح رسالة الخطأ تلقائياً بعد 6 ثوانٍ
   useEffect(() => {
     if (!error) return;
     const timer = setTimeout(() => setError(''), 6000);
     return () => clearTimeout(timer);
   }, [error]);
 
-  // ════════════════════════════════════════════════════════════
-  //  Brute Force Protection (client-side layer)
-  //  ملاحظة: الحماية الحقيقية تأتي من Supabase Auth rate limiting
-  // ════════════════════════════════════════════════════════════
+  const handleUsernameChange = useCallback((value: string) => {
+    setUsername(value);
+    setError('');
+  }, []);
 
-  const getLockoutRemaining = (): number => {
-    const lockoutTime = parseInt(sessionStorage.getItem(LOCKOUT_KEY) || '0', 10);
-    if (!lockoutTime) return 0;
-    const remaining = lockoutTime - Date.now();
-    if (remaining <= 0) {
-      sessionStorage.removeItem(LOCKOUT_KEY);
-      sessionStorage.removeItem(ATTEMPT_KEY);
-      return 0;
-    }
-    return Math.ceil(remaining / 1000);
-  };
-
-  const checkLockout = () => {
-    const remaining = getLockoutRemaining();
-    setRemainingLockout(remaining);
-  };
-
-  const recordFailedAttempt = () => {
-    const attempts = parseInt(sessionStorage.getItem(ATTEMPT_KEY) || '0', 10) + 1;
-    sessionStorage.setItem(ATTEMPT_KEY, attempts.toString());
-
-    if (attempts >= MAX_ATTEMPTS) {
-      const lockoutUntil = Date.now() + LOCKOUT_DURATION_MS;
-      sessionStorage.setItem(LOCKOUT_KEY, lockoutUntil.toString());
-      setRemainingLockout(LOCKOUT_DURATION_MS / 1000);
-    }
-  };
-
-  const clearAttempts = () => {
-    sessionStorage.removeItem(ATTEMPT_KEY);
-    sessionStorage.removeItem(LOCKOUT_KEY);
-    setRemainingLockout(0);
-  };
-
-  // ════════════════════════════════════════════════════════════
-  //  التحقق من المدخلات
-  // ════════════════════════════════════════════════════════════
-
-  const validate = (): boolean => {
-    if (!username.trim()) {
-      setError('يرجى إدخال اسم المستخدم');
-      return false;
-    }
-    if (username.trim().length < 3) {
-      setError('اسم المستخدم يجب أن يكون 3 أحرف على الأقل');
-      return false;
-    }
-    if (!password) {
-      setError('يرجى إدخال كلمة المرور');
-      return false;
-    }
-    if (password.length < 6) {
-      setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
-      return false;
-    }
-    return true;
-  };
-
-  // ════════════════════════════════════════════════════════════
-  //  تسجيل الدخول
-  //  🔒 لا localStorage.setItem('user') هنا
-  //  → storeLogin يتولى: Supabase Auth + جلب البروفايل + تعيين isAuthenticated
-  //  → بما في ذلك الإشعارات + الاشتراك في Realtime
-  // ════════════════════════════════════════════════════════════
+  const handlePasswordChange = useCallback((value: string) => {
+    setPassword(value);
+    setError('');
+  }, []);
 
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
@@ -147,37 +67,32 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
       setError('');
       setSuccess('');
 
-      // فحص الـ lockout
-      if (getLockoutRemaining() > 0) {
-        setError(`تم تأمين الحساب مؤقتاً. انتظر ${remainingLockout} ثانية.`);
+      if (security.checkLockout() > 0) {
+        setError(`تم تأمين الحساب مؤقتاً. انتظر ${security.remainingLockout} ثانية.`);
         return;
       }
 
-      if (!validate()) return;
+      const validationError = security.validate(username, password);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+
       setLoading(true);
 
       try {
-        // ══ بناء البريد الإلكتروني ══
-        // إذا أدخل المستخدم بريداً كاملاً → استخدمه مباشرة
-        // وإلا → أضف النطاق الافتراضي
         const finalEmail = username.includes('@')
           ? username.trim().toLowerCase()
           : `${username.trim().toLowerCase()}${EMAIL_DOMAIN}`;
 
-        // ══ تسجيل الدخول عبر دالة store.login() ══
-        // هذه الدالة تتولى كل شيء:
-        //   1. Supabase Auth (signInWithPassword)
-        //   2. جلب البروفايل من profiles/employees
-        //   3. تعيين isAuthenticated = true ← هذا ما كان مفقوداً!
-        //   4. إرسال إشعارات الترحيب وتسجيل الدخول
-        //   5. اشتراك Realtime لتحديثات البروفايل
+        // storeLogin يتولى: Supabase Auth → setSessionContext (RLS) →
+        // جلب البروفايل → isAuthenticated = true → إشعارات → Realtime
         await storeLogin(finalEmail, password);
 
-        clearAttempts();
+        security.clearAttempts();
         setSuccess('تم تسجيل الدخول بنجاح! جاري التحويل...');
-
       } catch (err: any) {
-        recordFailedAttempt();
+        security.recordFailedAttempt();
 
         const message = err?.message || '';
 
@@ -185,11 +100,9 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
           message.includes('Invalid login credentials') ||
           message.includes('invalid_credentials')
         ) {
-          const attempts = parseInt(sessionStorage.getItem(ATTEMPT_KEY) || '0', 10);
-          const remaining = MAX_ATTEMPTS - attempts;
           setError(
-            remaining > 0
-              ? `اسم المستخدم أو كلمة المرور غير صحيحة. (${remaining} محاولة متبقية)`
+            security.attemptsLeft > 0
+              ? `اسم المستخدم أو كلمة المرور غير صحيحة. (${security.attemptsLeft} محاولة متبقية)`
               : 'تم تجاوز الحد المسموح به من المحاولات. انتظر 5 دقائق.',
           );
         } else if (message.includes('Email not confirmed')) {
@@ -204,6 +117,9 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
           message.includes('Failed to fetch')
         ) {
           setError('خطأ في الاتصال — تحقق من اتصالك بالإنترنت.');
+        } else if (message.includes('تعذّر تحضير الجلسة')) {
+          // من setSessionContext في core/stores — رسالة جاهزة للعرض مباشرة
+          setError(message);
         } else {
           setError(`خطأ غير متوقع: ${message}`);
         }
@@ -211,108 +127,18 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
         setLoading(false);
       }
     },
-    [username, password, remainingLockout, storeLogin],
+    [username, password, storeLogin, security],
   );
-
-  // ════════════════════════════════════════════════════════════
-  //  واجهة المستخدم — بطاقة زجاجية
-  // ════════════════════════════════════════════════════════════
-
-  const isLocked = remainingLockout > 0;
-  const lockoutMinutes = Math.floor(remainingLockout / 60);
-  const lockoutSeconds = remainingLockout % 60;
 
   return (
     <div
       className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden"
       dir="rtl"
     >
-      {/* ══ أنماط محلية (aurora متحركة + شبكة + بطاقة زجاجية) ══ */}
-      <style>{`
-        @keyframes aurora1 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(40px, -30px) scale(1.1); }
-          66% { transform: translate(-30px, 20px) scale(0.95); }
-        }
-        @keyframes aurora2 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(-50px, 30px) scale(1.15); }
-        }
-        @keyframes aurora3 {
-          0%, 100% { transform: translate(0, 0) scale(0.9); }
-          50% { transform: translate(30px, 40px) scale(1.05); }
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(24px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes shimmer {
-          from { background-position: -200% 0; }
-          to { background-position: 200% 0; }
-        }
-        .aurora-blob { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.6; pointer-events: none; }
-        .glass-card {
-          animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-        }
-        .login-input {
-          transition: all 0.25s ease;
-        }
-        .login-input:focus {
-          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
-        }
-        .shimmer-btn {
-          background-image: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%);
-          background-size: 200% 100%;
-          animation: shimmer 2.5s infinite;
-        }
-      `}</style>
+      <LoginBackground />
 
-      {/* ══ الخلفية المتدرّجة الأساسية ══ */}
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900" />
-
-      {/* ══ كرات Aurora الضوئية المتحركة ══ */}
-      <div
-        className="aurora-blob"
-        style={{
-          width: 500, height: 500,
-          top: '-10%', right: '-5%',
-          background: 'radial-gradient(circle, #6366f1, transparent 70%)',
-          animation: 'aurora1 18s ease-in-out infinite',
-        }}
-      />
-      <div
-        className="aurora-blob"
-        style={{
-          width: 450, height: 450,
-          bottom: '-10%', left: '-5%',
-          background: 'radial-gradient(circle, #8b5cf6, transparent 70%)',
-          animation: 'aurora2 22s ease-in-out infinite',
-        }}
-      />
-      <div
-        className="aurora-blob"
-        style={{
-          width: 350, height: 350,
-          top: '40%', left: '40%',
-          background: 'radial-gradient(circle, #4f46e5, transparent 70%)',
-          opacity: 0.35,
-          animation: 'aurora3 25s ease-in-out infinite',
-        }}
-      />
-
-      {/* ══ شبكة خفيفة ══ */}
-      <div
-        className="absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage:
-            'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)',
-          backgroundSize: '56px 56px',
-        }}
-      />
-
-      {/* ══ البطاقة الزجاجية ══ */}
-      <div className="glass-card relative w-full max-w-md z-10">
-        {/* زر العودة للرئيسية */}
+      {/* البطاقة الزجاجية */}
+      <div className="login-glass-card relative w-full max-w-md z-10">
         {onBack && (
           <button
             onClick={onBack}
@@ -323,12 +149,10 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
           </button>
         )}
 
-        {/* ══ البطاقة نفسها ══ */}
         <div className="relative bg-white/10 backdrop-blur-2xl rounded-3xl border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] overflow-hidden">
-          {/* لمعة علوية */}
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
 
-          {/* ══ الرأس (الشعار + الهوية) ══ */}
+          {/* الرأس */}
           <div className="px-8 pt-10 pb-7 text-center">
             <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-indigo-700 shadow-[0_10px_30px_-5px_rgba(99,102,241,0.6)] mb-5 ring-1 ring-white/20">
               <ShieldCheck size={40} className="text-white" strokeWidth={1.8} />
@@ -337,148 +161,31 @@ export default function LoginPage({ onNavigate, onBack }: LoginPageProps) {
             <p className="text-indigo-200/80 text-sm font-medium">لإنتاج المواد الصيدلانية</p>
           </div>
 
-          {/* ══ جسم النموذج ══ */}
+          {/* جسم النموذج */}
           <div className="px-8 pb-9">
             <p className="text-white/60 text-center text-sm mb-6">
               سجّل دخولك إلى نظام إدارة الموارد البشرية
             </p>
 
-            {/* تنبيه القفل */}
-            {isLocked && (
-              <div className="mb-4 bg-orange-500/15 border border-orange-400/30 rounded-2xl px-4 py-3 flex items-start gap-3 backdrop-blur-sm">
-                <AlertCircle size={18} className="text-orange-300 shrink-0 mt-0.5" />
-                <div className="text-sm text-orange-100">
-                  <p className="font-semibold">الحساب مؤمَّن مؤقتاً</p>
-                  <p className="mt-0.5">
-                    انتظر{' '}
-                    <span className="font-mono font-bold">
-                      {lockoutMinutes > 0 ? `${lockoutMinutes}:` : ''}
-                      {String(lockoutSeconds).padStart(2, '0')}
-                    </span>{' '}
-                    ثانية قبل المحاولة مجدداً
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="space-y-4" noValidate>
-              {/* حقل اسم المستخدم */}
-              <div>
-                <label
-                  htmlFor="username"
-                  className="block text-sm font-semibold text-white/80 mb-1.5"
-                >
-                  اسم المستخدم
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => {
-                    setUsername(e.target.value);
-                    setError('');
-                  }}
-                  className="login-input w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-400 focus:bg-white/10 placeholder:text-white/35 disabled:opacity-50"
-                  placeholder="مثال: ahmed.ali"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  disabled={loading || isLocked}
-                  required
-                />
-                <p className="mt-1.5 text-xs text-white/40">
-                  اسم المستخدم أو البريد الإلكتروني الكامل
-                </p>
-              </div>
-
-              {/* حقل كلمة المرور */}
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-semibold text-white/80 mb-1.5"
-                >
-                  كلمة المرور
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPass ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setError('');
-                    }}
-                    className="login-input w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-400 focus:bg-white/10 placeholder:text-white/35 disabled:opacity-50 pl-12"
-                    placeholder="••••••••"
-                    autoComplete="current-password"
-                    disabled={loading || isLocked}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass((v) => !v)}
-                    aria-label={showPass ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors p-1 rounded"
-                    tabIndex={-1}
-                  >
-                    {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* رسالة الخطأ */}
-              {error && (
-                <div className="bg-red-500/15 border border-red-400/30 text-red-100 rounded-xl px-4 py-3 flex items-start gap-2.5 text-sm backdrop-blur-sm animate-[slideUp_0.3s_ease]">
-                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {/* رسالة النجاح */}
-              {success && (
-                <div className="bg-emerald-500/15 border border-emerald-400/30 text-emerald-100 rounded-xl px-4 py-3 flex items-center gap-2.5 text-sm font-medium backdrop-blur-sm animate-[slideUp_0.3s_ease]">
-                  <CheckCircle2 size={16} className="shrink-0" />
-                  <span>{success}</span>
-                </div>
-              )}
-
-              {/* زر تسجيل الدخول */}
-              <button
-                type="submit"
-                disabled={loading || isLocked}
-                className="relative w-full bg-gradient-to-l from-indigo-600 to-indigo-500 text-white rounded-xl py-3.5 font-bold hover:from-indigo-500 hover:to-indigo-400 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_10px_30px_-5px_rgba(99,102,241,0.5)] overflow-hidden"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    <span>جاري تسجيل الدخول...</span>
-                  </>
-                ) : isLocked ? (
-                  <span>
-                    انتظر {lockoutMinutes > 0 ? `${lockoutMinutes}:` : ''}
-                    {String(lockoutSeconds).padStart(2, '0')} ث
-                  </span>
-                ) : (
-                  <>
-                    <span>تسجيل الدخول</span>
-                    <ArrowRight size={18} />
-                    {!loading && (
-                      <span className="shimmer-btn absolute inset-0 pointer-events-none" />
-                    )}
-                  </>
-                )}
-              </button>
-            </form>
-
-            {/* تذييل */}
-            <p className="text-center text-xs text-white/40 mt-6">
-              للمساعدة التقنية تواصل مع{' '}
-              <span className="text-indigo-300 font-medium">مدير النظام</span>
-            </p>
+            <LoginForm
+              username={username}
+              password={password}
+              showPass={showPass}
+              loading={loading}
+              isLocked={security.isLocked}
+              error={error}
+              success={success}
+              lockoutMinutes={security.lockoutMinutes}
+              lockoutSeconds={security.lockoutSeconds}
+              onUsernameChange={handleUsernameChange}
+              onPasswordChange={handlePasswordChange}
+              onToggleShowPass={() => setShowPass((v) => !v)}
+              onSubmit={handleLogin}
+            />
           </div>
         </div>
 
-        {/* ══ شريط الثقة ══ */}
+        {/* شريط الثقة */}
         <div className="flex items-center justify-center gap-5 mt-6 text-white/50 text-xs font-semibold">
           <span className="flex items-center gap-1.5">
             <Lock size={13} className="text-indigo-300" />

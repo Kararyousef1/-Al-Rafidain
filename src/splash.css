@@ -1,4 +1,4 @@
-/* KOFRX Splash قبل تحميل React */
+/*  KYVZON Splash قبل تحميل React */
 html {
   font-family: 'Tajawal', 'Cairo', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
@@ -7,7 +7,7 @@ body {
   background-color: #0a0e27;
 }
 #root:empty::before {
-  content: 'KOFRX';
+  content: ' KYVZON';
   position: fixed;
   top: 50%;
   left: 50%;
@@ -21,7 +21,7 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   text-shadow: 0 0 40px rgba(0,212,255,0.5), 0 0 80px rgba(0,102,255,0.3);
-  animation: kofrx-glow 3s ease-in-out infinite;
+  animation:  KYVZON-glow 3s ease-in-out infinite;
 }
 #root:empty::after {
   content: '';
@@ -33,13 +33,13 @@ body {
   height: 2px;
   background: linear-gradient(90deg, transparent 0%, #0066ff 50%, transparent 100%);
   box-shadow: 0 0 10px #0066ff, 0 0 20px rgba(0,102,255,0.5);
-  animation: kofrx-line 2s ease-in-out infinite;
+  animation:  KYVZON-line 2s ease-in-out infinite;
 }
-@keyframes kofrx-glow {
+@keyframes  KYVZON-glow {
   0%, 100% { filter: brightness(1) drop-shadow(0 0 20px rgba(0,212,255,0.6)); }
   50% { filter: brightness(1.3) drop-shadow(0 0 40px rgba(0,212,255,0.9)); }
 }
-@keyframes kofrx-line {
+@keyframes  KYVZON-line {
   0%, 100% { width: 200px; opacity: 0.6; }
   50% { width: 350px; opacity: 1; }
 }

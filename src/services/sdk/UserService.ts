@@ -75,10 +75,10 @@ class UserService extends BaseService {
   }
 
   /**
-   * جلب مستخدم واحد
+   * جلب مستخدم واحد (بدون فلتر tenant_id لأن جدول profiles لا يحتوي على العمود)
    */
   async findUserById(id: string): Promise<UserProfile | null> {
-    return this.findById(id) as Promise<UserProfile | null>;
+    return this.findById(id, true) as Promise<UserProfile | null>;
   }
 
   /**

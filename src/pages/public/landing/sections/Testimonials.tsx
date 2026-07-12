@@ -1,0 +1,51 @@
+import React from 'react';
+import { Star, Quote, MessageSquare } from 'lucide-react';
+import { useLang } from '../LangContext';
+import { Reveal } from '../ui/Reveal';
+import { TESTIMONIALS } from '../data';
+
+export function Testimonials() {
+  const { lang, t } = useLang();
+
+  return (
+    <section id="testimonials" className="py-24 md:py-32" style={{ backgroundColor: 'var(--kv-bg-void)' }}>
+      <div className="max-w-7xl mx-auto px-4 md:px-8">
+        <Reveal className="text-center mb-16">
+          <div className="section-label"><MessageSquare size={12} /> {t('testi_label')}</div>
+          <h2 className="section-title text-3xl md:text-4xl font-black text-white mt-2">{t('testi_title')}</h2>
+          <p style={{ marginTop: '16px', color: 'rgba(180,190,255,0.75)', maxWidth: '36rem', margin: '16px auto 0' }}>{t('testi_sub')}</p>
+        </Reveal>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {TESTIMONIALS.map((testimonial, i) => (
+            <Reveal key={testimonial.id} delay={i * 0.08}>
+              <div className="testimonial-card flex flex-col">
+                <Quote size={26} style={{ color: `${testimonial.color}55`, marginBottom: 12 }} />
+                <div className="flex gap-0.5 mb-3">
+                  {Array.from({ length: testimonial.rating }).map((_, s) => (
+                    <Star key={s} size={13} fill="#fbbf24" style={{ color: '#fbbf24' }} />
+                  ))}
+                </div>
+                <p style={{ color: 'rgba(200,210,255,0.85)', fontSize: '0.9rem', lineHeight: '1.8', flex: 1 }}>
+                  {testimonial.quote[lang]}
+                </p>
+                <div className="flex items-center gap-3 mt-6 pt-5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div
+                    className="flex items-center justify-center rounded-xl font-black shrink-0"
+                    style={{ width: 40, height: 40, background: `${testimonial.color}22`, color: testimonial.color, fontSize: '0.8rem' }}
+                  >
+                    {testimonial.initials}
+                  </div>
+                  <div>
+                    <div className="text-white font-bold text-sm">{testimonial.name}</div>
+                    <div style={{ color: 'rgba(180,195,255,0.5)', fontSize: '0.72rem', marginTop: 1 }}>{testimonial.role[lang]}</div>
+                  </div>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}

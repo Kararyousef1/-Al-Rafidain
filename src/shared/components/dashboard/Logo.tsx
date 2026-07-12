@@ -1,7 +1,7 @@
 import { useUIStore } from '../../../core/stores';
 
 /**
- * The main KOFRX logo component for the application.
+ * The main  KYVZON logo component for the application.
  * Designed to be placed in the sidebar or header.
  */
 export function Logo() {
@@ -18,7 +18,7 @@ export function Logo() {
         <div
           style={{
             fontFamily: "'Orbitron', sans-serif",
-            fontSize: '1.75rem', // 28px
+            fontSize: '1.25rem', // 20px
             fontWeight: 900,
             letterSpacing: '0.05em',
             background: 'linear-gradient(135deg, #ffffff 0%, #a78bfa 70%, #7c3aed 100%)',
@@ -29,7 +29,7 @@ export function Logo() {
           }}
           className="transition-transform duration-300 ease-in-out hover:scale-105"
         >
-          KOFRX
+           KYVZON
         </div>
       </button>
     </div>

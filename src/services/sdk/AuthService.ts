@@ -26,6 +26,17 @@ export interface SessionResult {
   } | null;
 }
 
+/**
+ * نتيجة ضبط سياق الجلسة في Postgres.
+ * resolvedRole و isPlatformOwner تُحسب من قاعدة البيانات نفسها
+ * (من جدول profiles) وليس من أي قيمة يرسلها العميل.
+ */
+export interface SessionContextResult {
+  resolvedRole: string;
+  resolvedTenantId: string | null;
+  isPlatformOwner: boolean;
+}
+
 class AuthService {
   /**
    * تسجيل الدخول
@@ -55,6 +66,50 @@ class AuthService {
     } catch (error) {
       if (error instanceof SdkError) throw error;
       throw SdkError.fromSupabaseError(error as any);
+    }
+  }
+
+  /**
+   * ضبط سياق الجلسة في Postgres بعد نجاح تسجيل الدخول.
+   *
+   * ⚠️ يجب استدعاؤها فوراً بعد login() الناجح، وقبل أي طلب بيانات آخر.
+   * بدونها، دوال RLS مثل is_platform_owner() و is_same_tenant()
+   * (Migration 101) ترجع دائماً false — أي أن الوصول يُمنع للجميع
+   * وليس فقط للمستخدمين غير المصرح لهم.
+   *
+   * الدالة لا تقبل أي معامل: الدور والـ tenant يُقرآن من profiles
+   * داخل قاعدة البيانات (SECURITY DEFINER)، بحيث لا يمكن لمستخدم
+   * عادي انتحال صفة platform_owner من جهة العميل.
+   */
+  async setSessionContext(): Promise<SessionContextResult> {
+    try {
+      const { data, error } = await supabase.rpc('set_session_context');
+      if (error) throw SdkError.fromSupabaseError(error);
+
+      const row = Array.isArray(data) ? data[0] : data;
+      return {
+        resolvedRole: row?.resolved_role ?? '',
+        resolvedTenantId: row?.resolved_tenant_id ?? null,
+        isPlatformOwner: !!row?.is_owner,
+      };
+    } catch (error) {
+      if (error instanceof SdkError) throw error;
+      throw SdkError.fromSupabaseError(error as any);
+    }
+  }
+
+  /**
+   * تصفير سياق الجلسة. تُستدعى عند logout كإجراء احتياطي إضافي
+   * (Supabase غالباً يفتح اتصالاً جديداً لكل طلب، لكن هذا يحمي
+   * في حال إعادة استخدام اتصال pooled).
+   */
+  async clearSessionContext(): Promise<void> {
+    try {
+      const { error } = await supabase.rpc('clear_session_context');
+      if (error) throw SdkError.fromSupabaseError(error);
+    } catch (error) {
+      // لا نرمي الخطأ هنا عمداً — فشل التصفير لا يجب أن يمنع تسجيل الخروج
+      console.error('clearSessionContext failed:', error);
     }
   }
 

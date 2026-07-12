@@ -351,7 +351,7 @@ export default function Sidebar() {
       <div className={`flex items-center justify-between p-4 flex-shrink-0 bg-gradient-to-br ${config.gradient}`}>
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0 p-1">
-            <img src="/icons/icon-512.png" alt="KOFRX Logo" className="w-full h-full object-contain" />
+            <img src="/icons/icon-512.png" alt="KYVZON Logo" className="w-full h-full object-contain" />
           </div>
           {sidebarOpen && (
             <div className="min-w-0">
@@ -370,7 +370,7 @@ export default function Sidebar() {
                 }}
                 className="truncate"
               >
-                KOFRX
+                KYVZON
               </div>
               <p className="text-white/70 text-xs truncate">{config.portalName}</p>
             </div>

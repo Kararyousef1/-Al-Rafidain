@@ -102,7 +102,8 @@ export class BaseService {
    * إضافة شرط tenant_id تلقائياً إلى الاستعلام.
    * يتم استدعاؤها في كل عملية CRUD.
    */
-  protected addTenantFilter(query: any): any {
+  protected addTenantFilter(query: any, skipTenantFilter?: boolean): any {
+    if (skipTenantFilter) return query;
     const tenantId = getCurrentTenantId();
     if (tenantId) {
       return query.eq('tenant_id', tenantId);
@@ -167,10 +168,11 @@ export class BaseService {
   /**
    * جلب سجل واحد بالـ ID
    */
-  async findById(id: string): Promise<any | null> {
+  async findById(id: string, skipTenantFilter?: boolean): Promise<any | null> {
     try {
       const query = this.addTenantFilter(
-        supabase.from(this.tableName).select('*').eq('id', id)
+        supabase.from(this.tableName).select('*').eq('id', id),
+        skipTenantFilter
       );
       const { data, error } = await query.maybeSingle();
       if (error) throw SdkError.fromSupabaseError(error);

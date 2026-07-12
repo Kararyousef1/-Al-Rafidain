@@ -2,77 +2,34 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-
-    <!-- ═══ Responsive Viewport ═══ -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-
-    <!-- ═══ Title & Description ═══ -->
-    <title>KOFRX - وادي الرافدين - نظام إدارة الموارد البشرية</title>
-    <meta
-      name="description"
-      content="منصة الموارد البشرية المتكاملة — الحضور، الإجازات، البلاغات، التدريب، والعافية في مكان واحد."
-    />
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  PWA: Theme Color                                            -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
+    <title> - KYVZON- نظام إدارة  المؤسسات</title>
+    <meta name="description" content="منصة الموارد البشرية المتكاملة — الحضور، الإجازات، البلاغات، التدريب، والعافية في مكان واحد." />
     <meta name="theme-color" content="#0a0e27" />
     <meta name="theme-color" content="#0a0e27" media="(prefers-color-scheme: dark)" />
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  PWA: Manifest                                               -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
     <link rel="manifest" href="/manifest.json" />
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  PWA: iOS / Safari Support                                   -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="الرافدين HR" />
-    <meta name="application-name" content="الرافدين HR" />
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  Favicon + Icons                                             -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
+    <meta name="apple-mobile-web-app-title" content=" KYVZON ERP" />
+    <meta name="application-name" content=" KYVZON ERP" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-icon-180.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  Open Graph / Social Media                                   -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="KOFRX - وادي الرافدين - نظام إدارة الموارد البشرية" />
-    <meta
-      property="og:description"
-      content="منصة الموارد البشرية المتكاملة — الحضور، الإجازات، البلاغات، التدريب، والعافية."
-    />
+    <meta property="og:title" content=" -   KYVZON - نظام إدارة  المؤسسات" />
+    <meta property="og:description" content="منصة الموارد البشرية المتكاملة — الحضور، الإجازات، البلاغات، التدريب، والعافية." />
     <meta property="og:image" content="/icons/icon-512.png" />
     <meta property="og:locale" content="ar_AR" />
     <meta name="twitter:card" content="summary_large_image" />
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!--  Fonts — preconnect + preload الخطوط الثلاثة                -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- preload للأوزان الأكثر استخداماً -->
-    <link
-      rel="preload"
-      as="style"
-      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap" />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
 
-    <!-- ═══ منع FOUC + KOFRX Splash أولي ═══ -->
     <style>
       html {
         font-family: 'Tajawal', 'Cairo', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -81,56 +38,500 @@
         margin: 0;
         background-color: #0a0e27;
       }
-      /* KOFRX Splash قبل تحميل React */
-      #root:empty::before {
-        content: 'KOFRX';
+
+      /* ════════════════════════════════════════
+         SPLASH
+      ════════════════════════════════════════ */
+      #kyvzon-splash {
         position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
+        inset: 0;
+        z-index: 99999;
+        background: #080c1e;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        transition: opacity 1s ease, visibility 1s ease;
+      }
+      #kyvzon-splash.hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      /* خلفية نقاط ناعمة */
+      .kv-bg {
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(rgba(99,179,237,0.06) 1px, transparent 1px);
+        background-size: 32px 32px;
+      }
+
+      /* ضوء مركزي خافت */
+      .kv-ambient {
+        position: absolute;
+        width: 500px;
+        height: 500px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56,130,255,0.07) 0%, transparent 70%);
+        animation: kv-amb 5s ease-in-out infinite;
+      }
+      @keyframes kv-amb {
+        0%,100% { transform: scale(1); opacity:.6; }
+        50%      { transform: scale(1.2); opacity:1; }
+      }
+
+      /* ════ حاوية الأحرف ════ */
+      .kv-stage {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin-bottom: 48px;
+         direction: ltr; 
+      }
+
+      /* كل حرف */
+      .kv-ch {
         font-family: 'Orbitron', sans-serif;
-        font-size: 5rem;
         font-weight: 900;
-        letter-spacing: 0.15em;
-        background: linear-gradient(135deg, #ffffff 0%, #00d4ff 50%, #0066ff 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        text-shadow: 0 0 40px rgba(0,212,255,0.5), 0 0 80px rgba(0,102,255,0.3);
-        animation: kofrx-glow 3s ease-in-out infinite;
+        font-size: clamp(2rem, 5vw, 3rem);
+        color: #fff;
+        position: relative;
+        cursor: default;
+        /* حالة البداية */
+        opacity: 0;
+        transform: translateY(-40px) scale(0.6);
       }
-      /* خط مضيء تحت النص */
-      #root:empty::after {
+
+      /* الحرف الداخلي — يحمل اللون والتوهج */
+      .kv-ch span {
+        display: block;
+        position: relative;
+        z-index: 1;
+        transition: color 0.3s;
+      }
+
+      /* خط تحت كل حرف */
+      .kv-ch::after {
         content: '';
-        position: fixed;
-        top: calc(50% + 60px);
+        position: absolute;
+        bottom: -6px;
         left: 50%;
-        transform: translateX(-50%);
-        width: 200px;
+        transform: translateX(-50%) scaleX(0);
+        width: 100%;
         height: 2px;
-        background: linear-gradient(90deg, transparent 0%, #0066ff 50%, transparent 100%);
-        box-shadow: 0 0 10px #0066ff, 0 0 20px rgba(0,102,255,0.5);
-        animation: kofrx-line 2s ease-in-out infinite;
+        border-radius: 2px;
+        transition: transform 0.4s ease;
       }
-      @keyframes kofrx-glow {
-        0%, 100% { filter: brightness(1) drop-shadow(0 0 20px rgba(0,212,255,0.6)); }
-        50% { filter: brightness(1.3) drop-shadow(0 0 40px rgba(0,212,255,0.9)); }
+
+      /* ألوان كل حرف */
+      .kv-ch[data-l="K"] span { color: #60a5fa; }
+      .kv-ch[data-l="K"]::after { background: #60a5fa; box-shadow: 0 0 8px #60a5fa; }
+
+      .kv-ch[data-l="Y"] span { color: #a78bfa; }
+      .kv-ch[data-l="Y"]::after { background: #a78bfa; box-shadow: 0 0 8px #a78bfa; }
+
+      .kv-ch[data-l="V"] span { color: #34d399; }
+      .kv-ch[data-l="V"]::after { background: #34d399; box-shadow: 0 0 8px #34d399; }
+
+      .kv-ch[data-l="Z"] span { color: #f472b6; }
+      .kv-ch[data-l="Z"]::after { background: #f472b6; box-shadow: 0 0 8px #f472b6; }
+
+      .kv-ch[data-l="O"] span { color: #fbbf24; }
+      .kv-ch[data-l="O"]::after { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+
+      .kv-ch[data-l="N"] span { color: #38bdf8; }
+      .kv-ch[data-l="N"]::after { background: #38bdf8; box-shadow: 0 0 8px #38bdf8; }
+
+      /* ═══ مراحل الأنيميشن ═══
+         1. سقوط + ارتداد (drop-in)
+         2. تموّج مستمر (float)
+         3. تقارب نحو المركز (merge)
+         4. توهج واحد ثم اختفاء
+      */
+
+      /* المرحلة 1 — سقوط */
+      @keyframes kv-dropin {
+        0%   { opacity:0; transform: translateY(-60px) scale(0.5) rotate(-15deg); }
+        60%  { opacity:1; transform: translateY(8px)  scale(1.08) rotate(2deg); }
+        80%  { transform: translateY(-4px) scale(0.97) rotate(-1deg); }
+        100% { opacity:1; transform: translateY(0) scale(1) rotate(0deg); }
       }
-      @keyframes kofrx-line {
-        0%, 100% { width: 200px; opacity: 0.6; }
-        50% { width: 350px; opacity: 1; }
+
+      /* المرحلة 2 — طفو مستمر، delay بعد drop-in */
+      @keyframes kv-float-ch {
+        0%,100% { transform: translateY(0)   scale(1); }
+        50%      { transform: translateY(-10px) scale(1.04); }
       }
-      @media (max-width: 768px) {
-        #root:empty::before { font-size: 3rem; }
+
+      /* خط تحت الحرف يظهر بعد السقوط */
+      .kv-ch.landed::after {
+        transform: translateX(-50%) scaleX(1);
       }
+
+      /* المرحلة 3 — الأحرف تتجمع إلى المركز ثم تنكمش */
+      @keyframes kv-merge-K { to { transform: translateX(calc(var(--cx) * 1px)) scale(0) opacity(0); opacity:0; } }
+      @keyframes kv-merge-Y { to { transform: translateX(calc(var(--cx) * 1px)) scale(0); opacity:0; } }
+      @keyframes kv-merge-V { to { transform: translateX(calc(var(--cx) * 1px)) scale(0); opacity:0; } }
+      @keyframes kv-merge-Z { to { transform: translateX(calc(var(--cx) * 1px)) scale(0); opacity:0; } }
+      @keyframes kv-merge-O { to { transform: translateX(calc(var(--cx) * 1px)) scale(0); opacity:0; } }
+      @keyframes kv-merge-N { to { transform: translateX(calc(var(--cx) * 1px)) scale(0); opacity:0; } }
+
+      /* ════ نقطة الانفجار بعد الدمج ════ */
+      .kv-burst {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      @keyframes kv-burst-anim {
+        0%   { transform: scale(0);   opacity: 1; }
+        40%  { transform: scale(18);  opacity: 0.9; }
+        70%  { transform: scale(30);  opacity: 0.4; }
+        100% { transform: scale(40);  opacity: 0; }
+      }
+
+      /* ════ الاسم النهائي يظهر بعد الانفجار ════ */
+      .kv-final {
+        position: absolute;
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 900;
+        font-size: clamp(1.4rem, 3.5vw, 2rem);
+        letter-spacing: 0.25em;
+        color: #fff;
+        opacity: 0;
+        white-space: nowrap;
+        pointer-events: none;
+         direction: ltr; 
+      }
+
+      @keyframes kv-final-in {
+        0%   { opacity:0; letter-spacing: 0.6em; filter: blur(12px); }
+        60%  { opacity:1; filter: blur(0); }
+        100% { opacity:1; letter-spacing: 0.25em; filter: blur(0); }
+      }
+
+      /* ════ شريط التحميل الرفيع ════ */
+      .kv-bar-wrap {
+        width: min(280px, 75vw);
+        opacity: 0;
+        transition: opacity 0.5s ease;
+      }
+      .kv-bar-wrap.show { opacity: 1; }
+
+      .kv-bar-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .kv-bar-text {
+        font-family: 'Cairo', sans-serif;
+        font-size: 0.7rem;
+        color: rgba(148,163,184,0.7);
+        letter-spacing: 0.1em;
+      }
+      .kv-bar-pct {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 0.65rem;
+        color: rgba(148,163,184,0.7);
+        direction: ltr;
+      }
+
+      .kv-bar-track {
+        width: 100%;
+        height: 2px;
+        background: rgba(255,255,255,0.06);
+        border-radius: 4px;
+        overflow: visible;
+        position: relative;
+      }
+      .kv-bar-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
+        position: relative;
+        transition: width 0.1s linear;
+      }
+      .kv-bar-fill::after {
+        content: '';
+        position: absolute;
+        right: -3px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 0 8px #60a5fa, 0 0 16px #60a5fa;
+      }
+
+      /* ════ نص الحالة ════ */
+      .kv-status {
+        font-family: 'Cairo', sans-serif;
+        font-size: 0.72rem;
+        color: rgba(148,163,184,0.5);
+        letter-spacing: 0.05em;
+        margin-top: 14px;
+        height: 1em;
+        text-align: center;
+        direction: rtl;
+        opacity: 0;
+        transition: opacity 0.4s;
+      }
+      .kv-status.show { opacity: 1; }
+
+      /* ════ نقطتان خافتتان ════ */
+      .kv-dots {
+        display: flex;
+        gap: 6px;
+        margin-top: 20px;
+        opacity: 0;
+        transition: opacity 0.5s;
+      }
+      .kv-dots.show { opacity: 1; }
+      .kv-dot {
+        width: 4px; height: 4px;
+        border-radius: 50%;
+        animation: kv-dot-p 1.4s ease-in-out infinite;
+      }
+      .kv-dot:nth-child(1){ background:#3b82f6; animation-delay:0s; }
+      .kv-dot:nth-child(2){ background:#8b5cf6; animation-delay:0.2s; }
+      .kv-dot:nth-child(3){ background:#06b6d4; animation-delay:0.4s; }
+      @keyframes kv-dot-p {
+        0%,100%{ transform:scale(1);   opacity:.3; }
+        50%    { transform:scale(1.8); opacity:1; }
+      }
+
       @media (max-width: 480px) {
-        #root:empty::before { font-size: 2.5rem; }
+        .kv-stage { gap: 4px; }
       }
     </style>
   </head>
+
   <body>
+
+    <div id="kyvzon-splash" role="status" aria-label="جارٍ تحميل KYVZON">
+      <div class="kv-bg"></div>
+      <div class="kv-ambient"></div>
+
+      <!-- الأحرف -->
+      <div class="kv-stage" id="kv-stage">
+        <div class="kv-ch" data-l="K" data-i="0"><span>K</span></div>
+        <div class="kv-ch" data-l="Y" data-i="1"><span>Y</span></div>
+        <div class="kv-ch" data-l="V" data-i="2"><span>V</span></div>
+        <div class="kv-ch" data-l="Z" data-i="3"><span>Z</span></div>
+        <div class="kv-ch" data-l="O" data-i="4"><span>O</span></div>
+        <div class="kv-ch" data-l="N" data-i="5"><span>N</span></div>
+
+        <!-- نقطة الانفجار -->
+        <div class="kv-burst" id="kv-burst"></div>
+
+        <!-- الاسم النهائي -->
+        <div class="kv-final" id="kv-final">KYVZON</div>
+      </div>
+
+      <!-- شريط التحميل -->
+      <div class="kv-bar-wrap" id="kv-bar-wrap">
+        <div class="kv-bar-label">
+          <span class="kv-bar-text">جارٍ التهيئة</span>
+          <span class="kv-bar-pct" id="kv-pct">0%</span>
+        </div>
+        <div class="kv-bar-track">
+          <div class="kv-bar-fill" id="kv-fill"></div>
+        </div>
+      </div>
+
+      <div class="kv-status" id="kv-status">تحميل الوحدات…</div>
+
+      <div class="kv-dots" id="kv-dots">
+        <div class="kv-dot"></div>
+        <div class="kv-dot"></div>
+        <div class="kv-dot"></div>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <script>
+    (function () {
+
+      var letters   = document.querySelectorAll('.kv-ch');
+      var burst     = document.getElementById('kv-burst');
+      var finalEl   = document.getElementById('kv-final');
+      var barWrap   = document.getElementById('kv-bar-wrap');
+      var fillEl    = document.getElementById('kv-fill');
+      var pctEl     = document.getElementById('kv-pct');
+      var statusEl  = document.getElementById('kv-status');
+      var dotsEl    = document.getElementById('kv-dots');
+      var splash    = document.getElementById('kyvzon-splash');
+
+      var FLOAT_DUR  = [2.8, 3.2, 2.5, 3.5, 3.0, 2.7]; // ثانية لكل حرف
+      var FLOAT_DEL  = [0,   0.3, 0.6, 0.15, 0.45, 0.75];
+
+      /* ─── المرحلة 1: سقوط الأحرف ─── */
+      letters.forEach(function (el, i) {
+        setTimeout(function () {
+          el.style.animation =
+            'kv-dropin 0.65s cubic-bezier(0.34,1.4,0.64,1) forwards';
+
+          /* بعد السقوط: خط تحت الحرف + طفو */
+          setTimeout(function () {
+            el.classList.add('landed');
+            el.style.animation =
+              'kv-float-ch ' + FLOAT_DUR[i] + 's ease-in-out ' +
+              FLOAT_DEL[i] + 's infinite';
+          }, 680);
+
+        }, 200 + i * 120);
+      });
+
+      /* ─── المرحلة 2: بعد طفو قصير — شريط التحميل ─── */
+      var BAR_START = 200 + 5 * 120 + 900; // بعد آخر حرف + 900ms
+
+      setTimeout(function () {
+        barWrap.classList.add('show');
+        statusEl.classList.add('show');
+        dotsEl.classList.add('show');
+        runBar();
+      }, BAR_START);
+
+      /* شريط تحميل حي */
+      var barProgress = 0;
+      var statusMsgs  = [
+        'تحميل الوحدات…',
+        'تهيئة قاعدة البيانات…',
+        'إعداد الصلاحيات…',
+        'جارٍ الاتصال…',
+        'اكتمل التحميل'
+      ];
+      var msgIdx = 0;
+
+      function runBar() {
+        var start    = Date.now();
+        var duration = 3200;
+
+        function tick() {
+          var elapsed  = Date.now() - start;
+          var progress = Math.min(elapsed / duration, 1);
+          /* easing */
+          var eased = progress < 0.5
+            ? 2 * progress * progress
+            : -1 + (4 - 2 * progress) * progress;
+
+          barProgress = Math.round(eased * 100);
+          fillEl.style.width  = barProgress + '%';
+          pctEl.textContent   = barProgress + '%';
+
+          /* تغيير نص الحالة */
+          var newIdx = Math.min(
+            Math.floor(progress * statusMsgs.length),
+            statusMsgs.length - 1
+          );
+          if (newIdx !== msgIdx) {
+            msgIdx = newIdx;
+            statusEl.style.opacity = '0';
+            setTimeout(function () {
+              statusEl.textContent = statusMsgs[msgIdx];
+              statusEl.style.opacity = '1';
+            }, 200);
+          }
+
+          if (progress < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            /* ─── المرحلة 3: دمج الأحرف ─── */
+            setTimeout(doMerge, 400);
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+
+      /* ─── المرحلة 3: الأحرف تنكمش نحو المركز ─── */
+      function doMerge() {
+        var stage     = document.getElementById('kv-stage');
+        var stageRect = stage.getBoundingClientRect();
+        var cx        = stageRect.left + stageRect.width / 2;
+
+        letters.forEach(function (el, i) {
+          var rect    = el.getBoundingClientRect();
+          var elCx    = rect.left + rect.width / 2;
+          var dx      = cx - elCx; /* المسافة للمركز */
+
+          el.style.transition =
+            'transform 0.55s cubic-bezier(0.4,0,1,1), opacity 0.55s ease';
+          el.style.transform  =
+            'translateX(' + dx + 'px) scale(0.1)';
+          el.style.opacity    = '0';
+        });
+
+        /* إخفاء شريط التحميل */
+        barWrap.style.transition  = 'opacity 0.4s';
+        barWrap.style.opacity     = '0';
+        statusEl.style.opacity    = '0';
+        dotsEl.style.opacity      = '0';
+
+        /* ─── المرحلة 4: انفجار ─── */
+        setTimeout(doBurst, 600);
+      }
+
+      function doBurst() {
+        burst.style.animation = 'kv-burst-anim 0.7s cubic-bezier(0.2,0,0.8,1) forwards';
+
+        setTimeout(doFinal, 350);
+      }
+
+      /* ─── المرحلة 5: الاسم الكامل يظهر بنعومة ─── */
+      function doFinal() {
+        finalEl.style.animation =
+          'kv-final-in 1s cubic-bezier(0.2,0,0.4,1) forwards';
+
+        /* بعد 2.5 ثانية: إخفاء Splash */
+        setTimeout(hideSplash, 2200);
+      }
+
+      /* ─── إخفاء Splash ─── */
+      var appReady  = false;
+      var seqDone   = false;
+
+      function tryHide() {
+        if (appReady && seqDone && splash) {
+          splash.classList.add('hidden');
+          setTimeout(function () {
+            if (splash && splash.parentNode)
+              splash.parentNode.removeChild(splash);
+          }, 1100);
+        }
+      }
+
+      function hideSplash() {
+        seqDone = true;
+        tryHide();
+      }
+
+      /* مراقبة React */
+      var observer = new MutationObserver(function () {
+        var root = document.getElementById('root');
+        if (root && root.children.length > 0) {
+          appReady = true;
+          observer.disconnect();
+          tryHide();
+        }
+      });
+      var root = document.getElementById('root');
+      if (root) observer.observe(root, { childList: true });
+
+    })();
+    </script>
+
     <!--
       ملاحظة: تم إزالة سكريبت Cloudflare Challenge Platform المجهول
       الذي كان موجوداً في السابق. إذا كنت بحاجة لحماية CF، فعّلها

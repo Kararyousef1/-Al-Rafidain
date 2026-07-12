@@ -205,9 +205,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const data = await authService.login(email, password);
       if (!data.user) return false;
+
+      // ✅ إصلاح أمني: ضبط app.current_role / app.current_tenant_id في Postgres
+      // فوراً بعد نجاح المصادقة، وقبل أي طلب بيانات محمي بـ RLS.
+      // بدون هذه الخطوة، is_platform_owner() و is_same_tenant() (Migration 101)
+      // ترجعان false دائماً — أي أن RLS يمنع الوصول حتى للمستخدم الصحيح.
+      let sessionContext;
+      try {
+        sessionContext = await authService.setSessionContext();
+      } catch (contextError) {
+        // فشل ضبط السياق يعني عدم وجود profile صالح لهذا المستخدم —
+        // لا نكمل تسجيل الدخول ببيانات RLS معطّلة.
+        console.error('setSessionContext failed:', getErrorMessage(contextError));
+        await authService.logout();
+        throw new Error('تعذّر تحضير الجلسة. يرجى المحاولة مرة أخرى أو التواصل مع مدير النظام.');
+      }
+
       const profile = await userService.findUserById(data.user.id);
       if (profile) {
-        const tenantId = localStorage.getItem('tenant_id') || undefined;
+        const tenantId = sessionContext.resolvedTenantId
+          ?? localStorage.getItem('tenant_id')
+          ?? undefined;
 
         const normalizedUser = normalizeUser({
           ...profile,
@@ -282,6 +300,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       get().cleanup();
       localStorage.removeItem('user');
       localStorage.removeItem('userRole');
+      await authService.clearSessionContext();
       await authService.logout();
       set({ user: null, isAuthenticated: false });
     } catch (error) {

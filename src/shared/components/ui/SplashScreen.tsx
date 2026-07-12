@@ -1,6 +1,6 @@
 /**
  * ════════════════════════════════════════════════════════════════
- *  SplashScreen - شاشة التحميل الرئيسية (KOFRX Style)
+ *  SplashScreen - شاشة التحميل الرئيسية ( KYVZON Style)
  *  ✓ متجاوبة مع جميع أحجام الشاشات (موبايل، تابلت، ديسكتوب)
  * ════════════════════════════════════════════════════════════════
  */
@@ -109,7 +109,7 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
             filter: `drop-shadow(0 0 15px rgba(0,212,255,0.4))`,
           }}
         >
-          KOFRX
+           KYVZON
         </div>
 
         <div style={dotBaseStyle('clamp(5px, 1.5vw, 6px)', '0s', 'miniDotBounce')} />
@@ -169,12 +169,12 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
           margin: '0 auto',
         }}
       >
-        {/* شعار KOFRX */}
+        {/* شعار  KYVZON */}
         <div
           className="splash-logo"
           style={{
             ...logoGradientStyle,
-            fontSize: 'clamp(2rem, 8vw, 5rem)',
+            fontSize: 'clamp(2rem, 6vw, 3.5rem)',
             letterSpacing: 'clamp(0.08em, 0.15em, 0.2em)',
             animation: 'textGlow 3s ease-in-out infinite',
             textShadow: `0 0 40px rgba(0,212,255,0.5), 0 0 80px rgba(0,102,255,0.3)`,
@@ -182,7 +182,7 @@ export default function SplashScreen({ timedOut, mini, message }: SplashScreenPr
             whiteSpace: 'nowrap',
           }}
         >
-          KOFRX
+           KYVZON
         </div>
 
         {/* خط مضيء */}

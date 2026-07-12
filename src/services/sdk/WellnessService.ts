@@ -9,7 +9,7 @@ import { BaseService } from './BaseService';
 
 class WellnessService extends BaseService {
   constructor() {
-    super('wellness_log');
+    super('wellness_entries');
   }
 
   /**
